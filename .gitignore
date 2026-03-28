@@ -1,0 +1,53 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# uv
+uv.lock
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+
+# macOS
+.DS_Store
+._*
+
+# Benchmark outputs
+benchmarks/results/
+*.bench.json
+
+# Model downloads (large files)
+models/
+*.safetensors
+*.gguf
+
+# Pre-commit
+.pre-commit-cache/
+
+# Ruff
+.ruff_cache/
+
+# Claude Code
+.claude/
