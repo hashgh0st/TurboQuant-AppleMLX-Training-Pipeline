@@ -4,7 +4,7 @@
 
 Apple-Silicon KV-cache compression for MLX/MLX-LM, inspired by TurboQuant research. Stage-1-only prototype targeting Qwen 2.5/3 models on M4 Mini 16 GB.
 
-**Current status:** Phase 3 complete. Phase 4 (Benchmark Harness) is next.
+**Current status:** Phase 4 complete. Phase 5 (Metal Optimization) is next.
 
 ## Tech Stack
 
@@ -71,4 +71,4 @@ mlx_turboquant/
 - `docs/PRDv2.md` — Product requirements
 - `docs/RESEARCHv2.md` — Research brief
 - `docs/TDDv2.md` — Technical design
-- `docs/IMPLEMENTATION_PLAN.md` — Phased build plan (Phase 3 complete)
+- `docs/IMPLEMENTATION_PLAN.md` — Phased build plan (Phase 4 complete)

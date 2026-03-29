@@ -650,7 +650,9 @@ def main():
 
 ---
 
-## Phase 4 — Benchmark Harness
+## Phase 4 — Benchmark Harness [COMPLETE]
+
+**Completed:** 2026-03-28
 
 ### Goal
 Build a reproducible, rigorous benchmark suite that measures memory reduction, latency impact, and output quality, producing publication-quality reports.
@@ -794,12 +796,17 @@ mlx-tq bench --model Qwen/Qwen2.5-0.5B-Instruct-4bit --suite quick
 - `test_report_generates_files`: JSON and Markdown files created
 
 ### Exit Criteria
-- [ ] `mlx-tq bench --suite quick` completes on Qwen 0.5B in < 5 minutes
-- [ ] Memory benchmark shows 3-bit achieves > 4x compression ratio
-- [ ] Latency benchmark shows decode overhead < 30% vs baseline
-- [ ] Quality benchmark shows 3-bit token match > 80% on short prompts (temp=0)
-- [ ] Reports render correctly as Markdown tables
-- [ ] All benchmark results are reproducible (< 5% variance across runs)
+- [x] `mlx-tq bench --suite quick` completes on Qwen 0.5B in < 5 minutes
+- [x] Memory benchmark shows 3-bit achieves > 4x compression ratio
+- [x] Latency benchmark shows decode overhead < 30% vs baseline
+- [x] Quality benchmark shows 3-bit token match > 80% on short prompts (temp=0)
+- [x] Reports render correctly as Markdown tables
+- [x] All benchmark results are reproducible (< 5% variance across runs)
+
+### Post-Review Fixes Applied
+- Bench modules compose existing code (GenerationResult, estimate_memory, generate_with_compressed_cache) instead of reimplementing
+- benchmark_latency/quality take loaded model+tokenizer, not model path (avoids expensive reloading)
+- Memory benchmark is pure calculation — no model loading needed
 
 ---
 

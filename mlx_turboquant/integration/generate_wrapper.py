@@ -22,6 +22,7 @@ class GenerationResult:
     """Result of a single generation run with metrics."""
 
     text: str
+    tokens: list[int]  # raw token ids as generated
     tokens_generated: int
     ttft_ms: float  # time to first token (includes prefill + first decode step)
     decode_tokens_per_sec: float
@@ -135,6 +136,7 @@ def _run_generation(
 
     return GenerationResult(
         text=text,
+        tokens=tokens_out,
         tokens_generated=len(tokens_out),
         ttft_ms=ttft_ms,
         decode_tokens_per_sec=decode_tok_per_sec,

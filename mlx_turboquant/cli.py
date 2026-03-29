@@ -111,6 +111,61 @@ def _cmd_info(args: argparse.Namespace) -> None:
         )
 
 
+def _cmd_bench(args: argparse.Namespace) -> None:
+    """Run benchmark suite and generate report."""
+    from mlx_lm import load
+
+    from mlx_turboquant.bench.latency import benchmark_latency
+    from mlx_turboquant.bench.memory import benchmark_memory
+    from mlx_turboquant.bench.prompts import BENCHMARK_PROMPTS, QUICK_PROMPTS
+    from mlx_turboquant.bench.quality import benchmark_quality
+    from mlx_turboquant.bench.report import generate_report
+    from mlx_turboquant.integration.mlx_lm_adapter import introspect_model
+
+    print(f"Loading model: {args.model}...")
+    loaded = load(args.model)
+    model, tokenizer = loaded[0], loaded[1]
+    info = introspect_model(model)
+
+    is_quick = args.suite == "quick"
+    prompts = QUICK_PROMPTS if is_quick else BENCHMARK_PROMPTS
+    max_tokens = 50 if is_quick else 200
+    runs = 1 if is_quick else 3
+    warmup = 0 if is_quick else 1
+    kv_bits_list = [args.kv_bits] if is_quick else [2, 3, 4]
+    seq_lengths = [1024, 4096] if is_quick else None
+
+    # Memory benchmark (pure calculation)
+    print("Running memory benchmarks...")
+    mem_results = benchmark_memory(
+        num_layers=info.num_layers,
+        num_kv_heads=info.num_kv_heads,
+        head_dim=info.head_dim,
+        seq_lengths=seq_lengths,
+        kv_bits_list=kv_bits_list,
+    )
+
+    # Latency: single representative prompt (multiple prompts add noise, not signal)
+    latency_prompt = next(iter(prompts.values()))
+    print(f"Running latency benchmarks ({runs} runs)...")
+    lat_results = benchmark_latency(
+        model, tokenizer, latency_prompt,
+        max_tokens=max_tokens, kv_bits_list=kv_bits_list, runs=runs, warmup=warmup,
+    )
+
+    # Quality benchmark
+    print(f"Running quality benchmarks ({len(prompts)} prompts)...")
+    qual_results = benchmark_quality(
+        model, tokenizer, prompts,
+        kv_bits_list=kv_bits_list, max_tokens=max_tokens,
+    )
+
+    # Generate report
+    output_dir = args.output_dir
+    generate_report(mem_results, lat_results, qual_results, output_dir, model_name=args.model)
+    print(f"\nReport written to {output_dir}/results.json and {output_dir}/BENCHMARKS.md")
+
+
 def main() -> None:
     """Entry point for the mlx-tq CLI."""
     parser = argparse.ArgumentParser(
@@ -145,6 +200,17 @@ def main() -> None:
     info = subparsers.add_parser("info", help="Show model info and memory estimates")
     info.add_argument("--model", required=True, help="HuggingFace model path")
     info.set_defaults(func=_cmd_info)
+
+    # bench
+    bench = subparsers.add_parser("bench", help="Run benchmark suite")
+    bench.add_argument("--model", required=True, help="HuggingFace model path")
+    bench.add_argument(
+        "--suite", choices=["quick", "full"], default="quick",
+        help="Benchmark suite (default: quick)",
+    )
+    bench.add_argument("--kv-bits", type=int, default=3, help="Compression bits for quick suite")
+    bench.add_argument("--output-dir", default=".", help="Output directory for reports")
+    bench.set_defaults(func=_cmd_bench)
 
     parsed = parser.parse_args()
     if not hasattr(parsed, "func"):
