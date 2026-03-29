@@ -325,7 +325,7 @@ def _cmd_bench(args: argparse.Namespace) -> None:
         kv_bits_list=kv_bits_list,
     )
 
-    cal_dir = Path(args.calibrated_dir) if getattr(args, "calibrated_dir", None) else None
+    cal_dir = Path(args.calibrated_dir) if args.calibrated_dir else None
     bench_model_name = args.model if cal_dir else None
 
     latency_prompt = next(iter(prompts.values()))

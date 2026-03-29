@@ -99,8 +99,8 @@ class KVCollectorCache:
         self, keys: mx.array, values: mx.array
     ) -> tuple[mx.array, mx.array]:
         # Rotate and flatten immediately — don't hold raw MLX tensors
-        self.key_coords.append(_rotate_and_flatten([keys], self._transform))
-        self.value_coords.append(_rotate_and_flatten([values], self._transform))
+        self.key_coords.append(_rotate_and_flatten(keys, self._transform))
+        self.value_coords.append(_rotate_and_flatten(values, self._transform))
         result: tuple[mx.array, mx.array] = self._inner.update_and_fetch(keys, values)  # type: ignore[no-untyped-call]
         return result
 
@@ -145,21 +145,13 @@ class KVCollectorCache:
 
 
 def _rotate_and_flatten(
-    tensors: list[mx.array],
+    tensor: mx.array,
     transform: TransformState,
 ) -> np.ndarray:
-    """Normalize, rotate, and flatten KV tensors to 1-D coordinate samples.
-
-    Batches all tensors into a single MLX graph for efficient dispatch.
-    """
-    if not tensors:
-        return np.array([], dtype=np.float32)
-    # Batch: concatenate all tensors, normalize+rotate in one graph
-    stacked = mx.concatenate(
-        [t.reshape(-1, t.shape[-1]).astype(mx.float32) for t in tensors], axis=0
-    )
-    norms = mx.linalg.norm(stacked, axis=-1, keepdims=True)
-    normed = stacked / (norms + 1e-8)
+    """Normalize, rotate, and flatten a KV tensor to 1-D coordinate samples."""
+    flat = tensor.reshape(-1, tensor.shape[-1]).astype(mx.float32)
+    norms = mx.linalg.norm(flat, axis=-1, keepdims=True)
+    normed = flat / (norms + 1e-8)
     rotated = forward_transform(normed, transform)
     return np.array(rotated).ravel()
 
