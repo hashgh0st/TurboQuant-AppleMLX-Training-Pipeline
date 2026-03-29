@@ -45,7 +45,11 @@ def benchmark_latency(
     for bits in kv_bits_list:
         for i in range(warmup + runs):
             r = generate_with_compressed_cache(
-                model, tokenizer, prompt, kv_bits=bits, max_tokens=max_tokens,
+                model,
+                tokenizer,
+                prompt,
+                kv_bits=bits,
+                max_tokens=max_tokens,
             )
             if i >= warmup:
                 results.append(r)

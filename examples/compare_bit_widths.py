@@ -30,7 +30,11 @@ def main() -> None:
     for bits in [4, 3, 2]:
         print(f"\n=== {bits}-BIT COMPRESSED ===")
         result = generate_with_compressed_cache(
-            model, tokenizer, PROMPT, kv_bits=bits, max_tokens=80,
+            model,
+            tokenizer,
+            PROMPT,
+            kv_bits=bits,
+            max_tokens=80,
         )
         print(result.text)
 
@@ -42,11 +46,11 @@ def main() -> None:
         min_len = min(len(baseline.tokens), len(result.tokens))
         if min_len > 0:
             matches = sum(
-                1 for a, b in zip(
-                    baseline.tokens[:min_len], result.tokens[:min_len], strict=True
-                ) if a == b
+                1
+                for a, b in zip(baseline.tokens[:min_len], result.tokens[:min_len], strict=True)
+                if a == b
             )
-            print(f"  Token match: {matches}/{min_len} ({100*matches/min_len:.0f}%)")
+            print(f"  Token match: {matches}/{min_len} ({100 * matches / min_len:.0f}%)")
 
 
 if __name__ == "__main__":

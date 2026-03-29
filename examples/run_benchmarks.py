@@ -19,11 +19,16 @@ OUTPUT_DIR = "benchmark_results"
 
 def main() -> None:
     cmd = [
-        sys.executable, "-m", "mlx_turboquant",
+        sys.executable,
+        "-m",
+        "mlx_turboquant",
         "bench",
-        "--model", CANONICAL_SAMPLE_MODEL,
-        "--suite", "quick",
-        "--output-dir", OUTPUT_DIR,
+        "--model",
+        CANONICAL_SAMPLE_MODEL,
+        "--suite",
+        "quick",
+        "--output-dir",
+        OUTPUT_DIR,
     ]
     print(f"Running: {' '.join(cmd)}\n")
     subprocess.run(cmd, check=True)

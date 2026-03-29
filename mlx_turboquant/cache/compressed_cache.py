@@ -38,9 +38,7 @@ class CompressedKVCache:
         self._value_norms: mx.array | None = None
         self._pdim = packed_dim(codec.config.head_dim, codec.config.bits)
 
-    def update_and_fetch(
-        self, keys: mx.array, values: mx.array
-    ) -> tuple[mx.array, mx.array]:
+    def update_and_fetch(self, keys: mx.array, values: mx.array) -> tuple[mx.array, mx.array]:
         """Compress new KV, append to storage, return all decompressed KV.
 
         Input: keys/values (B, n_kv_heads, num_steps, head_dim)
@@ -104,9 +102,7 @@ class CompressedKVCache:
         # Decode all stored data -> transient decompressed tensors
         return self._decode_all(B, n_kv_heads, head_dim)
 
-    def _decode_all(
-        self, B: int, n_kv_heads: int, head_dim: int
-    ) -> tuple[mx.array, mx.array]:
+    def _decode_all(self, B: int, n_kv_heads: int, head_dim: int) -> tuple[mx.array, mx.array]:
         """Decode all stored compressed data up to self.offset."""
         assert self._packed_keys is not None
         assert self._key_norms is not None

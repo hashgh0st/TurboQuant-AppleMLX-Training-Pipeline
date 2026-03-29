@@ -45,12 +45,20 @@ class TestCacheParity:
     @pytest.mark.parametrize("bits", [3, 4])
     def test_cache_output_matches(self, bits: int) -> None:
         config_ref = CacheConfig(
-            num_layers=1, num_kv_heads=2, head_dim=128,
-            max_seq_len=4096, kv_bits=bits, backend="reference",
+            num_layers=1,
+            num_kv_heads=2,
+            head_dim=128,
+            max_seq_len=4096,
+            kv_bits=bits,
+            backend="reference",
         )
         config_metal = CacheConfig(
-            num_layers=1, num_kv_heads=2, head_dim=128,
-            max_seq_len=4096, kv_bits=bits, backend="metal",
+            num_layers=1,
+            num_kv_heads=2,
+            head_dim=128,
+            max_seq_len=4096,
+            kv_bits=bits,
+            backend="metal",
         )
         cache_ref = create_cache_layers(config_ref)[0]
         cache_metal = create_cache_layers(config_metal)[0]
@@ -69,16 +77,24 @@ class TestCacheParity:
 
     def test_metal_cache_has_use_metal_flag(self) -> None:
         config = CacheConfig(
-            num_layers=2, num_kv_heads=2, head_dim=64,
-            max_seq_len=4096, kv_bits=3, backend="metal",
+            num_layers=2,
+            num_kv_heads=2,
+            head_dim=64,
+            max_seq_len=4096,
+            kv_bits=3,
+            backend="metal",
         )
         layers = create_cache_layers(config)
         assert all(c.use_metal for c in layers)
 
     def test_reference_cache_no_metal_flag(self) -> None:
         config = CacheConfig(
-            num_layers=2, num_kv_heads=2, head_dim=64,
-            max_seq_len=4096, kv_bits=3, backend="reference",
+            num_layers=2,
+            num_kv_heads=2,
+            head_dim=64,
+            max_seq_len=4096,
+            kv_bits=3,
+            backend="reference",
         )
         layers = create_cache_layers(config)
         assert all(not c.use_metal for c in layers)

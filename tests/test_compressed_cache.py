@@ -146,9 +146,7 @@ class TestCompression:
         cache.update_and_fetch(*_random_kv(n_tokens))
         compressed_bytes = cache.nbytes
         fp16_bytes = 2 * B * KV_HEADS * n_tokens * HEAD_DIM * 2
-        assert compressed_bytes < fp16_bytes, (
-            f"Compressed {compressed_bytes} >= fp16 {fp16_bytes}"
-        )
+        assert compressed_bytes < fp16_bytes, f"Compressed {compressed_bytes} >= fp16 {fp16_bytes}"
 
     def test_decompressed_quality(self, cache: CompressedKVCache) -> None:
         """Decompressed output should have NMSE within codec bounds."""

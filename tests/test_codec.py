@@ -102,7 +102,9 @@ class TestInnerProduct:
             mx.linalg.norm(ip_original) * mx.linalg.norm(ip_compressed) + 1e-10
         )
         mx.eval(cos_sim)
-        assert float(cos_sim) > 0.95, f"IP cosine similarity: {float(cos_sim):.4f} (expected > 0.95)"
+        assert float(cos_sim) > 0.95, (
+            f"IP cosine similarity: {float(cos_sim):.4f} (expected > 0.95)"
+        )
 
         # Also check normalized absolute error: mean|error| / mean|original|
         abs_error = float(mx.mean(mx.abs(ip_original - ip_compressed)))

@@ -38,8 +38,11 @@ class TestMeasure:
     def test_matches_estimate(self) -> None:
         """Live cache measurement should be within 10% of formula estimate."""
         config = CacheConfig(
-            num_layers=4, num_kv_heads=2, head_dim=128,
-            max_seq_len=4096, kv_bits=3,
+            num_layers=4,
+            num_kv_heads=2,
+            head_dim=128,
+            max_seq_len=4096,
+            kv_bits=3,
         )
         layers = create_cache_layers(config)
         n_tokens = 100

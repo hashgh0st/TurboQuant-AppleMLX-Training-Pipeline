@@ -24,7 +24,11 @@ def main() -> None:
 
     print("\nGenerating with 3-bit compressed cache...")
     result = generate_with_compressed_cache(
-        model, tokenizer, PROMPT, kv_bits=3, max_tokens=100,
+        model,
+        tokenizer,
+        PROMPT,
+        kv_bits=3,
+        max_tokens=100,
     )
     print(result.text)
     print(f"\n  Tokens: {result.tokens_generated}")

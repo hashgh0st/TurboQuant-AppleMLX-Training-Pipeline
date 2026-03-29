@@ -43,12 +43,21 @@ def benchmark_quality(
 
     for prompt_id, prompt_text in prompts.items():
         baseline = generate_baseline(
-            model, tokenizer, prompt_text, max_tokens=max_tokens, temp=0.0,
+            model,
+            tokenizer,
+            prompt_text,
+            max_tokens=max_tokens,
+            temp=0.0,
         )
 
         for bits in kv_bits_list:
             compressed = generate_with_compressed_cache(
-                model, tokenizer, prompt_text, kv_bits=bits, max_tokens=max_tokens, temp=0.0,
+                model,
+                tokenizer,
+                prompt_text,
+                kv_bits=bits,
+                max_tokens=max_tokens,
+                temp=0.0,
             )
 
             # Single-pass comparison of raw token sequences

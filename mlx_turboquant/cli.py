@@ -87,12 +87,20 @@ def _cmd_generate(args: argparse.Namespace) -> None:
 
     if args.cache_mode == "compressed":
         result = generate_with_compressed_cache(
-            model, tokenizer, args.prompt,
-            kv_bits=args.kv_bits, max_tokens=args.max_tokens, temp=args.temp,
+            model,
+            tokenizer,
+            args.prompt,
+            kv_bits=args.kv_bits,
+            max_tokens=args.max_tokens,
+            temp=args.temp,
         )
     else:
         result = generate_baseline(
-            model, tokenizer, args.prompt, max_tokens=args.max_tokens, temp=args.temp,
+            model,
+            tokenizer,
+            args.prompt,
+            max_tokens=args.max_tokens,
+            temp=args.temp,
         )
 
     _print_result(result)
@@ -110,13 +118,21 @@ def _cmd_compare(args: argparse.Namespace) -> None:
 
     print("Running baseline...")
     baseline = generate_baseline(
-        model, tokenizer, args.prompt, max_tokens=args.max_tokens, temp=args.temp,
+        model,
+        tokenizer,
+        args.prompt,
+        max_tokens=args.max_tokens,
+        temp=args.temp,
     )
 
     print(f"Running compressed ({args.kv_bits}-bit)...")
     compressed = generate_with_compressed_cache(
-        model, tokenizer, args.prompt,
-        kv_bits=args.kv_bits, max_tokens=args.max_tokens, temp=args.temp,
+        model,
+        tokenizer,
+        args.prompt,
+        kv_bits=args.kv_bits,
+        max_tokens=args.max_tokens,
+        temp=args.temp,
     )
 
     _print_result(baseline, header="BASELINE")
@@ -194,15 +210,23 @@ def _cmd_bench(args: argparse.Namespace) -> None:
     latency_prompt = next(iter(prompts.values()))
     print(f"Running latency benchmarks ({runs} runs)...")
     lat_results = benchmark_latency(
-        model, tokenizer, latency_prompt,
-        max_tokens=max_tokens, kv_bits_list=kv_bits_list, runs=runs, warmup=warmup,
+        model,
+        tokenizer,
+        latency_prompt,
+        max_tokens=max_tokens,
+        kv_bits_list=kv_bits_list,
+        runs=runs,
+        warmup=warmup,
     )
 
     # Quality benchmark
     print(f"Running quality benchmarks ({len(prompts)} prompts)...")
     qual_results = benchmark_quality(
-        model, tokenizer, prompts,
-        kv_bits_list=kv_bits_list, max_tokens=max_tokens,
+        model,
+        tokenizer,
+        prompts,
+        kv_bits_list=kv_bits_list,
+        max_tokens=max_tokens,
     )
 
     # Generate report
@@ -224,7 +248,9 @@ def main() -> None:
     gen.add_argument("--model", required=True, help="HuggingFace model path")
     gen.add_argument("--prompt", required=True, help="Input prompt")
     gen.add_argument(
-        "--cache-mode", choices=["compressed", "baseline"], default="compressed",
+        "--cache-mode",
+        choices=["compressed", "baseline"],
+        default="compressed",
         help="Cache mode (default: compressed)",
     )
     _add_kv_bits_argument(gen, help_text="Compression bits (choices: 2, 3, 4; default: 3)")
@@ -250,7 +276,9 @@ def main() -> None:
     bench = subparsers.add_parser("bench", help="Run benchmark suite")
     bench.add_argument("--model", required=True, help="HuggingFace model path")
     bench.add_argument(
-        "--suite", choices=["quick", "full"], default="quick",
+        "--suite",
+        choices=["quick", "full"],
+        default="quick",
         help="Benchmark suite (default: quick)",
     )
     _add_kv_bits_argument(

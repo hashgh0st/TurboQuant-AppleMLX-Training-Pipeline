@@ -69,8 +69,12 @@ def generate_report(
     if quality_results:
         lines.append("## Quality")
         lines.append("")
-        lines.append("| Prompt | Bits | Token Match | First Diverge | Baseline Toks | Compressed Toks |")
-        lines.append("|--------|------|-------------|---------------|--------------|----------------|")
+        lines.append(
+            "| Prompt | Bits | Token Match | First Diverge | Baseline Toks | Compressed Toks |"
+        )
+        lines.append(
+            "|--------|------|-------------|---------------|--------------|----------------|"
+        )
         for qr in quality_results:
             lines.append(
                 f"| {qr.prompt_id} | {qr.kv_bits} | "

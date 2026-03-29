@@ -30,7 +30,7 @@ class TestBetaPdf:
         grid = np.linspace(-1.0, 1.0, 10001)
         pdf = _beta_pdf_shifted(grid, 128)
         mid = len(grid) // 2
-        np.testing.assert_allclose(pdf[:mid], pdf[-1 : mid : -1], atol=1e-10)
+        np.testing.assert_allclose(pdf[:mid], pdf[-1:mid:-1], atol=1e-10)
 
     def test_positive(self) -> None:
         """PDF should be non-negative everywhere."""
@@ -44,9 +44,7 @@ class TestLloydMax:
         """Centroids should stabilize well before 300 iterations."""
         cb_100 = build_lloyd_max_codebook(128, 3, iterations=100)
         cb_300 = build_lloyd_max_codebook(128, 3, iterations=300)
-        diff = max(
-            abs(a - b) for a, b in zip(cb_100.centroids, cb_300.centroids, strict=True)
-        )
+        diff = max(abs(a - b) for a, b in zip(cb_100.centroids, cb_300.centroids, strict=True))
         assert diff < 1e-8, f"Centroids still changing: max diff={diff}"
 
     def test_codebook_monotonicity(self) -> None:
