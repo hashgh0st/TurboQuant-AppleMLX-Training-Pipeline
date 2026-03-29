@@ -325,7 +325,9 @@ def _cmd_bench(args: argparse.Namespace) -> None:
         kv_bits_list=kv_bits_list,
     )
 
-    # Latency: single representative prompt (multiple prompts add noise, not signal)
+    cal_dir = Path(args.calibrated_dir) if getattr(args, "calibrated_dir", None) else None
+    bench_model_name = args.model if cal_dir else None
+
     latency_prompt = next(iter(prompts.values()))
     print(f"Running latency benchmarks ({runs} runs)...")
     lat_results = benchmark_latency(
@@ -336,9 +338,10 @@ def _cmd_bench(args: argparse.Namespace) -> None:
         kv_bits_list=kv_bits_list,
         runs=runs,
         warmup=warmup,
+        model_name=bench_model_name,
+        calibrated_dir=cal_dir,
     )
 
-    # Quality benchmark
     print(f"Running quality benchmarks ({len(prompts)} prompts)...")
     qual_results = benchmark_quality(
         model,
@@ -346,6 +349,8 @@ def _cmd_bench(args: argparse.Namespace) -> None:
         prompts,
         kv_bits_list=kv_bits_list,
         max_tokens=max_tokens,
+        model_name=bench_model_name,
+        calibrated_dir=cal_dir,
     )
 
     # Evaluate promotion gates
@@ -445,6 +450,7 @@ def main() -> None:
         help_text="Compression bits for quick suite (choices: 2, 3, 4; default: 3)",
     )
     bench.add_argument("--output-dir", default=".", help="Output directory for reports")
+    _add_calibrated_dir_argument(bench)
     bench.add_argument(
         "--gate",
         action="store_true",

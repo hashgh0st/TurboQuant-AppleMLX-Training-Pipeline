@@ -6,6 +6,7 @@ and should happen once in the CLI.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from mlx_turboquant.integration.compression_profile import (
@@ -29,6 +30,8 @@ def benchmark_latency(
     profiles: list[CompressionProfile] | None = None,
     warmup: int = 1,
     runs: int = 3,
+    model_name: str | None = None,
+    calibrated_dir: Path | None = None,
 ) -> list[GenerationResult]:
     """Run generation multiple times for stable latency measurements.
 
@@ -56,6 +59,8 @@ def benchmark_latency(
                 value_kv_bits=profile.effective_value_bits,
                 backend=profile.backend,
                 max_tokens=max_tokens,
+                model_name=model_name,
+                calibrated_dir=calibrated_dir,
             )
             if i >= warmup:
                 results.append(r)

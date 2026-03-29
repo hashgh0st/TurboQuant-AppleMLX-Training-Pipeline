@@ -7,6 +7,7 @@ but not advertised as reliable.
 
 from __future__ import annotations
 
+import statistics
 from collections import defaultdict
 from dataclasses import dataclass, field
 
@@ -55,16 +56,21 @@ def evaluate_profiles(
     for qr in quality_results:
         quality_by_mode[qr.cache_mode].append(qr)
 
-    baseline_tok_s = 0.0
+    # Use median latency (not best-case) to avoid promoting on a lucky run.
+    baseline_samples: list[float] = []
+    latency_samples_by_mode: dict[str, list[float]] = defaultdict(list)
     for lr in latency_results:
-        if lr.cache_mode == "baseline" and lr.decode_tokens_per_sec > baseline_tok_s:
-            baseline_tok_s = lr.decode_tokens_per_sec
+        if lr.cache_mode == "baseline":
+            baseline_samples.append(lr.decode_tokens_per_sec)
+        else:
+            latency_samples_by_mode[lr.cache_mode].append(lr.decode_tokens_per_sec)
 
-    latency_by_mode: dict[str, float] = {}
-    for lr in latency_results:
-        if lr.cache_mode != "baseline":
-            prev = latency_by_mode.get(lr.cache_mode, 0.0)
-            latency_by_mode[lr.cache_mode] = max(prev, lr.decode_tokens_per_sec)
+    baseline_tok_s = statistics.median(baseline_samples) if baseline_samples else 0.0
+    latency_by_mode: dict[str, float] = {
+        mode: statistics.median(samples)
+        for mode, samples in latency_samples_by_mode.items()
+        if samples
+    }
 
     verdicts: list[ProfileVerdict] = []
     # Sorted for deterministic report ordering.

@@ -84,20 +84,23 @@ def build_empirical_codebook(
 class KVCollectorCache:
     """KVCache wrapper that intercepts raw K/V tensors for calibration.
 
-    Wraps a real mlx_lm KVCache, records every K/V tensor passed to
-    update_and_fetch, then delegates to the inner cache for normal operation.
+    Wraps a real mlx_lm KVCache, records post-rotation coordinate samples
+    (not raw tensors) to bound memory usage. Each step's K/V is immediately
+    normalized, rotated, and converted to a small numpy array.
     """
 
-    def __init__(self, inner: KVCache) -> None:
+    def __init__(self, inner: KVCache, transform: TransformState) -> None:
         self._inner = inner
-        self._collected_keys: list[mx.array] = []
-        self._collected_values: list[mx.array] = []
+        self._transform = transform
+        self.key_coords: list[np.ndarray] = []
+        self.value_coords: list[np.ndarray] = []
 
     def update_and_fetch(
         self, keys: mx.array, values: mx.array
     ) -> tuple[mx.array, mx.array]:
-        self._collected_keys.append(keys)
-        self._collected_values.append(values)
+        # Rotate and flatten immediately — don't hold raw MLX tensors
+        self.key_coords.append(_rotate_and_flatten([keys], self._transform))
+        self.value_coords.append(_rotate_and_flatten([values], self._transform))
         result: tuple[mx.array, mx.array] = self._inner.update_and_fetch(keys, values)  # type: ignore[no-untyped-call]
         return result
 
@@ -186,7 +189,7 @@ def collect_kv_samples(
     for prompt_text in prompts.values():
         prompt_tokens = mx.array(tokenizer.encode(prompt_text))
         inner_cache = make_prompt_cache(model)
-        collector_cache = [KVCollectorCache(layer) for layer in inner_cache]
+        collector_cache = [KVCollectorCache(layer, transform) for layer in inner_cache]
 
         for _token_id, _logprobs in generate_step(
             prompt=prompt_tokens,
@@ -198,12 +201,11 @@ def collect_kv_samples(
         ):
             pass
 
-        # Extract and rotate collected tensors, then free MLX memory
         for layer in collector_cache:
-            key_parts.append(_rotate_and_flatten(layer._collected_keys, transform))
-            value_parts.append(_rotate_and_flatten(layer._collected_values, transform))
-            layer._collected_keys.clear()
-            layer._collected_values.clear()
+            if layer.key_coords:
+                key_parts.append(np.concatenate(layer.key_coords))
+            if layer.value_coords:
+                value_parts.append(np.concatenate(layer.value_coords))
 
     key_samples = np.concatenate(key_parts) if key_parts else np.array([], dtype=np.float32)
     value_samples = np.concatenate(value_parts) if value_parts else np.array([], dtype=np.float32)

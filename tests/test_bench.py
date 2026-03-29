@@ -322,6 +322,23 @@ class TestPromotion:
         assert verdicts[0].passes
         assert verdicts[0].min_first_diverge == _NO_DIVERGE
 
+    def test_uses_median_latency_not_best_case(self) -> None:
+        """A profile with one lucky fast run should not pass on that alone."""
+        qrs = [_qr(token_match=0.90, first_div=20)]
+        lrs = [
+            _lr("baseline", 200.0),
+            _lr("baseline", 200.0),
+            _lr("baseline", 200.0),
+            # Compressed: two slow runs + one lucky fast run
+            _lr("compressed-3bit", 40.0),   # 5x slowdown
+            _lr("compressed-3bit", 45.0),   # 4.4x slowdown
+            _lr("compressed-3bit", 180.0),  # lucky outlier — 1.1x
+        ]
+        verdicts = evaluate_profiles(qrs, lrs)
+        # Median compressed = 45.0 tok/s. Median baseline = 200.0. Slowdown = 4.4x > 3x.
+        assert not verdicts[0].passes
+        assert any("decode_slowdown" in f for f in verdicts[0].failures)
+
     def test_multiple_profiles_separate_verdicts(self) -> None:
         qrs = [
             _qr(cache_mode="compressed-3bit", token_match=0.90, first_div=20),

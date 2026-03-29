@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from mlx_turboquant.integration.compression_profile import (
@@ -38,6 +39,8 @@ def benchmark_quality(
     kv_bits_list: list[int] | None = None,
     profiles: list[CompressionProfile] | None = None,
     max_tokens: int = 100,
+    model_name: str | None = None,
+    calibrated_dir: Path | None = None,
 ) -> list[QualityResult]:
     """For each prompt, generate baseline and compressed at temp=0, compare tokens.
 
@@ -67,6 +70,8 @@ def benchmark_quality(
                 backend=profile.backend,
                 max_tokens=max_tokens,
                 temp=0.0,
+                model_name=model_name,
+                calibrated_dir=calibrated_dir,
             )
 
             # Single-pass comparison of raw token sequences
