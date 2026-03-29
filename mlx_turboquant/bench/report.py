@@ -7,6 +7,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
+from mlx_turboquant.bench.promotion import ProfileVerdict
 from mlx_turboquant.bench.quality import QualityResult
 from mlx_turboquant.cache.memory_accounting import MemoryReport
 from mlx_turboquant.integration.generate_wrapper import GenerationResult
@@ -18,6 +19,7 @@ def generate_report(
     quality_results: list[QualityResult],
     output_dir: str,
     model_name: str = "",
+    verdicts: list[ProfileVerdict] | None = None,
 ) -> None:
     """Write results.json and BENCHMARKS.md to output_dir."""
     out = Path(output_dir)
@@ -40,11 +42,17 @@ def generate_report(
     if memory_results:
         lines.append("## Memory")
         lines.append("")
-        lines.append("| Seq Len | Bits | Baseline (MB) | Compressed (MB) | Ratio |")
-        lines.append("|---------|------|--------------|----------------|-------|")
+        use_modes = any(mr.cache_mode for mr in memory_results)
+        if use_modes:
+            lines.append("| Seq Len | Mode | Baseline (MB) | Compressed (MB) | Ratio |")
+            lines.append("|---------|------|--------------|----------------|-------|")
+        else:
+            lines.append("| Seq Len | Bits | Baseline (MB) | Compressed (MB) | Ratio |")
+            lines.append("|---------|------|--------------|----------------|-------|")
         for mr in memory_results:
+            mode_label = mr.cache_mode or str(mr.kv_bits)
             lines.append(
-                f"| {mr.seq_len:,} | {mr.kv_bits} | "
+                f"| {mr.seq_len:,} | {mode_label} | "
                 f"{mr.baseline_bytes / 1024 / 1024:.1f} | "
                 f"{mr.compressed_bytes / 1024 / 1024:.1f} | "
                 f"{mr.compression_ratio:.1f}x |"
@@ -70,17 +78,32 @@ def generate_report(
         lines.append("## Quality")
         lines.append("")
         lines.append(
-            "| Prompt | Bits | Token Match | First Diverge | Baseline Toks | Compressed Toks |"
+            "| Prompt | Mode | Token Match | First Diverge | Baseline Toks | Compressed Toks |"
         )
         lines.append(
             "|--------|------|-------------|---------------|--------------|----------------|"
         )
         for qr in quality_results:
             lines.append(
-                f"| {qr.prompt_id} | {qr.kv_bits} | "
+                f"| {qr.prompt_id} | {qr.cache_mode} | "
                 f"{qr.token_match_ratio:.1%} | "
                 f"{qr.first_divergence_position} | "
                 f"{qr.baseline_tokens} | {qr.compressed_tokens} |"
+            )
+        lines.append("")
+
+    # Promotion status
+    if verdicts:
+        lines.append("## Promotion Status")
+        lines.append("")
+        lines.append("| Mode | Avg Match | Min Diverge | Slowdown | Status |")
+        lines.append("|------|-----------|-------------|----------|--------|")
+        for v in verdicts:
+            status = "PASS" if v.passes else f"FAIL: {', '.join(v.failures)}"
+            slowdown_str = f"{v.decode_slowdown:.1f}x" if v.decode_slowdown > 0 else "n/a"
+            lines.append(
+                f"| {v.cache_mode} | {v.avg_token_match:.0%} | "
+                f"{v.min_first_diverge} | {slowdown_str} | {status} |"
             )
         lines.append("")
 

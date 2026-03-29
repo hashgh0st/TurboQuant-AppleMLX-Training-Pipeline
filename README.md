@@ -73,15 +73,32 @@ mlx-tq generate --model mlx-community/Qwen2.5-0.5B-Instruct-4bit \
 mlx-tq compare --model mlx-community/Qwen2.5-0.5B-Instruct-4bit \
     --prompt "What is the meaning of life?" --kv-bits 3
 
+# Experimental mixed-precision compare: 3-bit keys, 4-bit values
+mlx-tq compare --model mlx-community/Qwen2.5-0.5B-Instruct-4bit \
+    --prompt "Explain attention" --kv-bits 3 --value-kv-bits 4
+
+# Experimental Metal-backed compressed path
+mlx-tq compare --model mlx-community/Qwen2.5-0.5B-Instruct-4bit \
+    --prompt "Explain attention" --kv-bits 4 --backend metal
+
+# Attention sink: keep first 4 tokens uncompressed for quality
+mlx-tq generate --model mlx-community/Qwen2.5-0.5B-Instruct-4bit \
+    --prompt "Explain attention" --cache-mode compressed --kv-bits 3 --sink-tokens 4
+
 # Show model architecture and memory estimates
 mlx-tq info --model mlx-community/Qwen2.5-0.5B-Instruct-4bit
 
 # Run benchmarks and generate reports
 mlx-tq bench --model mlx-community/Qwen2.5-0.5B-Instruct-4bit --suite quick
+
+# Run benchmarks with promotion gate (exits non-zero if any profile fails)
+mlx-tq bench --model mlx-community/Qwen2.5-0.5B-Instruct-4bit --suite quick --gate
 ```
 
 `--kv-bits` is validated at the CLI boundary and currently supports `2`, `3`, or `4`.
 `generate` defaults to `baseline`; `--cache-mode compressed` is an explicit experimental opt-in.
+Compressed generation also supports experimental `--value-kv-bits`, `--backend metal`, and `--sink-tokens` tuning knobs for mixed-precision, Metal-backed, and attention-sink evaluation.
+The `bench` subcommand supports `--gate` to enforce promotion thresholds (min 80% token match, min 10 first-diverge, max 3x slowdown) and exit non-zero on failure.
 
 ### Python API
 
@@ -112,6 +129,7 @@ if result.cache_allocated_bytes is not None:
 ```
 
 See [`examples/`](examples/) for more.
+The new [`examples/evaluate_compression_profiles.py`](examples/evaluate_compression_profiles.py) script runs the recommended mixed-precision and Metal-backed experimental profiles end to end.
 
 ## Troubleshooting
 
@@ -126,7 +144,7 @@ mlx_turboquant/
   codec/        Phase 1: codebooks, transforms, packbits, stage1_codec
   cache/        Phase 2: compressed_cache, memory_accounting, cache_layout
   integration/  Phase 3: mlx_lm_adapter, generate_wrapper
-  bench/        Phase 4: memory, latency, quality, prompts, report
+  bench/        Phase 4+: memory, latency, quality, prompts, report, promotion
   kernels/      Phase 5: metal_pack (fused unpack+dequant Metal kernels)
   cli.py        CLI entry point (generate, compare, info, bench)
 ```
@@ -135,7 +153,7 @@ mlx_turboquant/
 
 ```bash
 uv sync --all-extras          # install all deps
-uv run pytest                 # 182 tests
+uv run pytest                 # 213 tests
 uv run ruff check .           # lint
 uv run mypy mlx_turboquant/   # type check (strict)
 ```

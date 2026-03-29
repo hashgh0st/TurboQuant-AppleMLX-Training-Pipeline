@@ -1,11 +1,12 @@
 """Metal kernel for fused unpack + codebook lookup.
 
-Combines two operations into a single Metal kernel per element:
+Combines two operations into a single Metal kernel:
   1. Extract bit-field from packed uint32 word
   2. Look up centroid value from codebook
 
-This eliminates the intermediate uint8 index array and halves memory bandwidth
-compared to the reference path (unpack -> codebook[indices]).
+Uses a **per-word** approach: each thread processes one packed uint32 word and
+writes all values, with the codebook loaded into threadgroup shared memory.
+This reduces thread count and global memory reads vs the per-element approach.
 """
 
 from __future__ import annotations
@@ -19,19 +20,40 @@ _KERNEL_CACHE: dict[int, object] = {}
 
 
 def _make_shader_source(bits: int) -> str:
-    """Generate Metal shader source for a given bit-width.
+    """Generate per-word Metal shader source for a given bit-width.
 
-    Templated from VALUES_PER_WORD and bits to avoid copy-pasting constants
-    across shader variants.
+    Each thread:
+      1. Loads codebook into threadgroup shared memory (first threads only)
+      2. Reads one packed uint32 word
+      3. Extracts all values and writes them via unrolled loop
+
+    Templated from VALUES_PER_WORD and bits to stay in sync with packbits.
     """
     vpw = VALUES_PER_WORD[bits]
     mask = (1 << bits) - 1
+    cb_size = 1 << bits
+
+    # Unrolled lookups for each value in the word
+    lookups = "\n        ".join(
+        f"out[base + {i}] = shared_cb[(packed_word >> {i * bits}) & 0x{mask:X}];"
+        for i in range(vpw)
+    )
+
     return f"""
-        uint elem = thread_position_in_grid.x;
-        uint word_idx = elem / {vpw};
-        uint bit_offset = (elem % {vpw}) * {bits};
-        uint index = (packed[word_idx] >> bit_offset) & 0x{mask:X};
-        out[elem] = codebook[index];
+        // Load codebook into threadgroup shared memory (handles threadgroup < cb_size)
+        threadgroup float shared_cb[{cb_size}];
+        uint tid = thread_position_in_threadgroup.x;
+        uint tg_size = threads_per_threadgroup.x;
+        for (uint i = tid; i < {cb_size}u; i += tg_size) {{
+            shared_cb[i] = codebook[i];
+        }}
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+
+        // One thread per packed word: unroll {vpw} lookups
+        uint word = thread_position_in_grid.x;
+        uint packed_word = packed[word];
+        uint base = word * {vpw}u;
+        {lookups}
     """
 
 
@@ -61,15 +83,17 @@ def metal_unpack_dequantize(
     Input: packed (..., packed_dim) uint32, codebook (2^bits,) float32
     Output: (..., head_dim) float32 — dequantized values
 
-    One thread per output element. Flattens input, runs kernel, reshapes.
+    One thread per packed word. Each thread processes all values in a word.
     """
     batch_shape = packed.shape[:-1]
     packed_dim_val = packed.shape[-1]
     vpw = VALUES_PER_WORD[bits]
 
-    # Compute total output elements without math.prod — use packed.size directly
-    total_output_elements = (packed.size // packed_dim_val) * packed_dim_val * vpw
+    total_words = packed.size
+    if total_words == 0:
+        return mx.zeros((*batch_shape, head_dim), dtype=mx.float32)
 
+    total_output_elements = total_words * vpw
     packed_flat = packed.reshape(-1)
 
     kernel = _get_kernel(bits)
@@ -78,8 +102,8 @@ def metal_unpack_dequantize(
         template=[],
         output_shapes=[(total_output_elements,)],
         output_dtypes=[mx.float32],
-        grid=(total_output_elements, 1, 1),
-        threadgroup=(min(256, total_output_elements), 1, 1),
+        grid=(total_words, 1, 1),
+        threadgroup=(min(256, max(32, total_words)), 1, 1),
     )
 
     # Reshape and truncate to head_dim (handles 3-bit padding)

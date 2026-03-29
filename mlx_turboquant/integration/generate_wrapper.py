@@ -15,6 +15,10 @@ from mlx_lm.generate import generate_step
 from mlx_lm.models.cache import make_prompt_cache
 
 from mlx_turboquant.cache.memory_accounting import estimate_memory
+from mlx_turboquant.integration.compression_profile import (
+    CompressionBackend,
+    CompressionProfile,
+)
 from mlx_turboquant.integration.mlx_lm_adapter import (
     introspect_model,
     make_compressed_cache,
@@ -54,7 +58,13 @@ def _allocated_cache_bytes(prompt_cache: list[Any]) -> int:
     return total
 
 
-def _logical_cache_bytes(model: Any, prompt_cache: list[Any], *, kv_bits: int | None) -> int:
+def _logical_cache_bytes(
+    model: Any,
+    prompt_cache: list[Any],
+    *,
+    key_bits: int | None,
+    value_bits: int | None = None,
+) -> int:
     """Estimate occupied cache bytes from model geometry and live token count."""
     occupied_tokens = _cache_occupied_tokens(prompt_cache)
     if occupied_tokens == 0:
@@ -62,17 +72,23 @@ def _logical_cache_bytes(model: Any, prompt_cache: list[Any], *, kv_bits: int | 
 
     info = introspect_model(model)
     baseline_bytes = 2 * info.num_layers * info.num_kv_heads * info.head_dim * 2 * occupied_tokens
-    if kv_bits is None:
+    if key_bits is None:
         return baseline_bytes
 
     report = estimate_memory(
         num_layers=info.num_layers,
         num_kv_heads=info.num_kv_heads,
         head_dim=info.head_dim,
-        kv_bits=kv_bits,
+        kv_bits=key_bits,
         seq_len=occupied_tokens,
+        value_kv_bits=value_bits,
     )
     return report.compressed_bytes
+
+
+def _compressed_cache_mode(profile: CompressionProfile) -> str:
+    """Return the benchmark/report label for a compressed operating point."""
+    return profile.cache_mode
 
 
 def generate_with_compressed_cache(
@@ -81,17 +97,35 @@ def generate_with_compressed_cache(
     prompt: str,
     *,
     kv_bits: int = 3,
+    value_kv_bits: int | None = None,
+    backend: CompressionBackend = "reference",
     max_tokens: int = 256,
     temp: float = 0.0,
     seed: int = 42,
+    sink_tokens: int = 0,
 ) -> GenerationResult:
     """Generate text using compressed KV cache.
 
     Creates a CompressedKVCache and passes it as prompt_cache to generate_step
     with kv_bits=None to disable MLX-LM's built-in affine quantization.
+
+    When ``sink_tokens > 0``, the first tokens are kept in uncompressed FP16.
     """
+    profile = CompressionProfile(
+        kv_bits,
+        value_bits=value_kv_bits,
+        backend=backend,
+        seed=seed,
+    )
     prompt_tokens = mx.array(tokenizer.encode(prompt))
-    cache = make_compressed_cache(model, kv_bits=kv_bits, seed=seed)
+    cache = make_compressed_cache(
+        model,
+        kv_bits=profile.key_bits,
+        value_kv_bits=profile.effective_value_bits,
+        backend=profile.backend,
+        seed=profile.seed,
+        sink_tokens=sink_tokens,
+    )
 
     return _run_generation(
         model=model,
@@ -100,9 +134,10 @@ def generate_with_compressed_cache(
         prompt_cache=cache,
         max_tokens=max_tokens,
         temp=temp,
-        cache_mode=f"compressed-{kv_bits}bit",
+        cache_mode=_compressed_cache_mode(profile),
         generate_step_kv_bits=None,  # disable MLX-LM's affine quant
-        logical_kv_bits=kv_bits,
+        logical_kv_bits=profile.key_bits,
+        logical_value_kv_bits=profile.effective_value_bits,
     )
 
 
@@ -141,6 +176,7 @@ def _run_generation(
     cache_mode: str,
     generate_step_kv_bits: int | None,
     logical_kv_bits: int | None,
+    logical_value_kv_bits: int | None = None,
 ) -> GenerationResult:
     """Shared generation loop for both compressed and baseline paths."""
     sampler = (
@@ -179,7 +215,12 @@ def _run_generation(
     decode_tokens = max(len(tokens_out) - 1, 1)
     decode_tok_per_sec = decode_tokens / decode_time if decode_time > 0 else 0.0
 
-    cache_bytes = _logical_cache_bytes(model, prompt_cache, kv_bits=logical_kv_bits)
+    cache_bytes = _logical_cache_bytes(
+        model,
+        prompt_cache,
+        key_bits=logical_kv_bits,
+        value_bits=logical_value_kv_bits,
+    )
     cache_allocated_bytes = _allocated_cache_bytes(prompt_cache)
     text = tokenizer.decode(tokens_out)
 

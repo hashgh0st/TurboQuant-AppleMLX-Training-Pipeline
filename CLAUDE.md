@@ -4,7 +4,7 @@
 
 Apple-Silicon KV-cache compression for MLX/MLX-LM, inspired by TurboQuant research. Stage-1-only prototype targeting Qwen 2.5/3 models on M4 Mini 16 GB.
 
-**Current status:** v0.1.0 released. All phases complete (0-6).
+**Current status:** v0.2.0 released. All phases complete (0-10).
 
 ## Tech Stack
 
@@ -27,7 +27,15 @@ Apple-Silicon KV-cache compression for MLX/MLX-LM, inspired by TurboQuant resear
 
 6. **Metal shader sources are templated from VALUES_PER_WORD to stay in sync with packbits constants.** Do not hard-code values-per-word in shader source strings.
 
-5. **`memory_accounting.py` owns calculations, `bench/memory.py` owns iteration and reporting.** Don't duplicate the formula or `cache.nbytes` reading in the bench module.
+7. **`memory_accounting.py` owns calculations, `bench/memory.py` owns iteration and reporting.** Don't duplicate the formula or `cache.nbytes` reading in the bench module.
+
+8. **Attention sink tokens are uncompressed FP16.** The first N tokens (configurable via `sink_tokens`) bypass compression entirely, preserving quality on initial tokens with disproportionate attention mass (StreamingLLM insight). Threaded through CompressedKVCache, CacheConfig, adapter, generate_wrapper, and CLI (`--sink-tokens`).
+
+9. **Incremental decode is O(1) per step.** During autoregressive generation, only newly added tokens are decoded via `_decode_incremental`; previously decoded output is cached in `_decoded_keys`/`_decoded_values`. `_decode_all` is retained as fallback for the `state` property.
+
+10. **`bench/promotion.py` owns promotion gate logic.** `PromotionThresholds` defines pass/fail criteria (min 80% token match, min 10 first-diverge, max 3x slowdown). `evaluate_profiles()` produces `ProfileVerdict` results. Don't duplicate threshold logic in other bench modules.
+
+11. **Use `resolve_profiles()` for profile resolution.** The helper in `integration/compression_profile.py` eliminates boilerplate across bench modules. Profiles are labeled "research candidates", not "recommended" — promotion requires passing `--gate` thresholds.
 
 ## Key MLX APIs
 
@@ -64,7 +72,7 @@ mlx_turboquant/
 ├── cache/       # compressed_cache, cache_layout, memory_accounting
 ├── integration/ # mlx_lm_adapter, generate_wrapper
 ├── kernels/     # metal_pack, metal_attention (Phase 5)
-├── bench/       # latency, quality, memory, prompts (Phase 4)
+├── bench/       # latency, quality, memory, prompts, promotion (Phase 4+)
 └── cli.py       # mlx-tq entry point (Phase 3)
 ```
 
@@ -73,4 +81,4 @@ mlx_turboquant/
 - `docs/PRDv2.md` — Product requirements
 - `docs/RESEARCHv2.md` — Research brief
 - `docs/TDDv2.md` — Technical design
-- `docs/IMPLEMENTATION_PLAN.md` — Phased build plan (all phases complete)
+- `docs/IMPLEMENTATION_PLAN.md` — Phased build plan (Phases 0-10 complete)

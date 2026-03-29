@@ -40,3 +40,16 @@ class TestCreateCacheLayers:
         layers = create_cache_layers(config)
         assert all(c.empty() for c in layers)
         assert all(c.offset == 0 for c in layers)
+
+    def test_supports_distinct_key_and_value_codecs(self) -> None:
+        config = CacheConfig(
+            num_layers=1,
+            num_kv_heads=2,
+            head_dim=64,
+            max_seq_len=4096,
+            kv_bits=3,
+            value_kv_bits=4,
+        )
+        layer = create_cache_layers(config)[0]
+        assert layer.key_codec.config.bits == 3
+        assert layer.value_codec.config.bits == 4

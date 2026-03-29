@@ -5,6 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from mlx_turboquant.integration.compression_profile import (
+    CompressionProfile,
+    resolve_profiles,
+)
 from mlx_turboquant.integration.generate_wrapper import (
     generate_baseline,
     generate_with_compressed_cache,
@@ -16,7 +20,10 @@ class QualityResult:
     """Quality comparison for one (prompt, kv_bits) pair."""
 
     prompt_id: str
+    cache_mode: str
     kv_bits: int
+    value_kv_bits: int
+    backend: str
     token_match_ratio: float
     first_divergence_position: int
     baseline_tokens: int
@@ -29,6 +36,7 @@ def benchmark_quality(
     prompts: dict[str, str],
     *,
     kv_bits_list: list[int] | None = None,
+    profiles: list[CompressionProfile] | None = None,
     max_tokens: int = 100,
 ) -> list[QualityResult]:
     """For each prompt, generate baseline and compressed at temp=0, compare tokens.
@@ -36,8 +44,7 @@ def benchmark_quality(
     Token match ratio = (number of matching tokens) / min(baseline_len, compressed_len).
     First divergence position = index of first differing token (or -1 if identical).
     """
-    if kv_bits_list is None:
-        kv_bits_list = [2, 3, 4]
+    profiles = resolve_profiles(profiles, kv_bits_list, default_bits=[2, 3, 4])
 
     results: list[QualityResult] = []
 
@@ -50,12 +57,14 @@ def benchmark_quality(
             temp=0.0,
         )
 
-        for bits in kv_bits_list:
+        for profile in profiles:
             compressed = generate_with_compressed_cache(
                 model,
                 tokenizer,
                 prompt_text,
-                kv_bits=bits,
+                kv_bits=profile.key_bits,
+                value_kv_bits=profile.effective_value_bits,
+                backend=profile.backend,
                 max_tokens=max_tokens,
                 temp=0.0,
             )
@@ -78,7 +87,10 @@ def benchmark_quality(
             results.append(
                 QualityResult(
                     prompt_id=prompt_id,
-                    kv_bits=bits,
+                    cache_mode=compressed.cache_mode,
+                    kv_bits=profile.key_bits,
+                    value_kv_bits=profile.effective_value_bits,
+                    backend=profile.backend,
                     token_match_ratio=match_ratio,
                     first_divergence_position=first_div,
                     baseline_tokens=len(baseline.tokens),

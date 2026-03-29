@@ -8,6 +8,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from mlx_turboquant.integration.compression_profile import (
+    CompressionProfile,
+    resolve_profiles,
+)
 from mlx_turboquant.integration.generate_wrapper import (
     GenerationResult,
     generate_baseline,
@@ -22,6 +26,7 @@ def benchmark_latency(
     *,
     max_tokens: int = 100,
     kv_bits_list: list[int] | None = None,
+    profiles: list[CompressionProfile] | None = None,
     warmup: int = 1,
     runs: int = 3,
 ) -> list[GenerationResult]:
@@ -30,8 +35,7 @@ def benchmark_latency(
     Returns all GenerationResult objects (one per run per config).
     Includes baseline + each kv_bits setting.
     """
-    if kv_bits_list is None:
-        kv_bits_list = [3, 4]
+    profiles = resolve_profiles(profiles, kv_bits_list, default_bits=[3, 4])
 
     results: list[GenerationResult] = []
 
@@ -42,13 +46,15 @@ def benchmark_latency(
             results.append(r)
 
     # Warmup + measure each bit width
-    for bits in kv_bits_list:
+    for profile in profiles:
         for i in range(warmup + runs):
             r = generate_with_compressed_cache(
                 model,
                 tokenizer,
                 prompt,
-                kv_bits=bits,
+                kv_bits=profile.key_bits,
+                value_kv_bits=profile.effective_value_bits,
+                backend=profile.backend,
                 max_tokens=max_tokens,
             )
             if i >= warmup:

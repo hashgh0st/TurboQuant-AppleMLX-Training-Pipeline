@@ -79,7 +79,13 @@ class TestMakeCompressedCache:
     def test_respects_kv_bits(self) -> None:
         model = _MockModel()
         cache = make_compressed_cache(model, kv_bits=4)
-        assert cache[0].codec.config.bits == 4
+        assert cache[0].key_codec.config.bits == 4
+
+    def test_supports_mixed_key_value_bits(self) -> None:
+        model = _MockModel()
+        cache = make_compressed_cache(model, kv_bits=3, value_kv_bits=4)
+        assert cache[0].key_codec.config.bits == 3
+        assert cache[0].value_codec.config.bits == 4
 
     def test_all_caches_empty(self) -> None:
         model = _MockModel()

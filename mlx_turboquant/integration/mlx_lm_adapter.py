@@ -11,6 +11,7 @@ from typing import Any
 
 from mlx_turboquant.cache.cache_layout import CacheConfig, create_cache_layers
 from mlx_turboquant.cache.compressed_cache import CompressedKVCache
+from mlx_turboquant.integration.compression_profile import CompressionBackend
 
 
 @dataclass
@@ -43,13 +44,19 @@ def make_compressed_cache(
     model: Any,
     *,
     kv_bits: int = 3,
+    value_kv_bits: int | None = None,
     max_seq_len: int = 4096,
+    backend: CompressionBackend = "reference",
     seed: int = 42,
+    sink_tokens: int = 0,
 ) -> list[CompressedKVCache]:
     """Create compressed cache layers for a loaded MLX-LM model.
 
     Analogous to mlx_lm.models.cache.make_prompt_cache() but returns
     CompressedKVCache instances instead of KVCache.
+
+    When ``sink_tokens > 0``, the first tokens are kept in uncompressed
+    FP16 (attention sink) for quality preservation at long context.
     """
     info = introspect_model(model)
     config = CacheConfig(
@@ -58,6 +65,9 @@ def make_compressed_cache(
         head_dim=info.head_dim,
         max_seq_len=max_seq_len,
         kv_bits=kv_bits,
+        value_kv_bits=value_kv_bits,
         seed=seed,
+        backend=backend,
+        sink_tokens=sink_tokens,
     )
     return create_cache_layers(config)

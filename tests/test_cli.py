@@ -46,6 +46,8 @@ class TestHelp:
         assert "--model" in result.stdout
         assert "--prompt" in result.stdout
         assert "--cache-mode" in result.stdout
+        assert "--value-kv-bits" in result.stdout
+        assert "--backend" in result.stdout
         assert "default: baseline" in result.stdout
         assert "experimental" in result.stdout
 
@@ -54,6 +56,8 @@ class TestHelp:
         assert result.returncode == 0
         assert "--model" in result.stdout
         assert "--kv-bits" in result.stdout
+        assert "--value-kv-bits" in result.stdout
+        assert "--backend" in result.stdout
 
     def test_info_help(self) -> None:
         result = _run_cli("info", "--help")
@@ -158,6 +162,9 @@ def test_compare_uses_logical_cache_bytes_for_headline(
             model="dummy/model",
             prompt="hello",
             kv_bits=3,
+            value_kv_bits=None,
+            backend="reference",
+            sink_tokens=0,
             max_tokens=2,
             temp=0.0,
         )

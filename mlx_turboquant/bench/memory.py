@@ -6,6 +6,10 @@ Uses estimate_memory from memory_accounting — pure calculation, no model loadi
 from __future__ import annotations
 
 from mlx_turboquant.cache.memory_accounting import MemoryReport, estimate_memory
+from mlx_turboquant.integration.compression_profile import (
+    CompressionProfile,
+    resolve_profiles,
+)
 
 
 def benchmark_memory(
@@ -14,6 +18,7 @@ def benchmark_memory(
     head_dim: int,
     seq_lengths: list[int] | None = None,
     kv_bits_list: list[int] | None = None,
+    profiles: list[CompressionProfile] | None = None,
 ) -> list[MemoryReport]:
     """Run estimate_memory across all (seq_len, kv_bits) combinations.
 
@@ -21,18 +26,19 @@ def benchmark_memory(
     """
     if seq_lengths is None:
         seq_lengths = [512, 1024, 2048, 4096, 8192]
-    if kv_bits_list is None:
-        kv_bits_list = [2, 3, 4]
+    profiles = resolve_profiles(profiles, kv_bits_list, default_bits=[2, 3, 4])
 
     results: list[MemoryReport] = []
     for seq_len in seq_lengths:
-        for bits in kv_bits_list:
+        for profile in profiles:
             report = estimate_memory(
                 num_layers=num_layers,
                 num_kv_heads=num_kv_heads,
                 head_dim=head_dim,
-                kv_bits=bits,
+                kv_bits=profile.key_bits,
                 seq_len=seq_len,
+                value_kv_bits=profile.effective_value_bits,
             )
+            report.cache_mode = profile.cache_mode
             results.append(report)
     return results

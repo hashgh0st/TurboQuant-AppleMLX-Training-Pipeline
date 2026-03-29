@@ -80,6 +80,37 @@ def _add_kv_bits_argument(parser: argparse.ArgumentParser, *, help_text: str) ->
     )
 
 
+def _add_value_kv_bits_argument(parser: argparse.ArgumentParser) -> None:
+    """Add optional value-branch bit selection for experimental profiles."""
+    parser.add_argument(
+        "--value-kv-bits",
+        type=int,
+        choices=SUPPORTED_KV_BITS,
+        default=None,
+        help="Experimental value-branch compression bits (defaults to --kv-bits).",
+    )
+
+
+def _add_backend_argument(parser: argparse.ArgumentParser) -> None:
+    """Add experimental backend selection for compressed generation."""
+    parser.add_argument(
+        "--backend",
+        choices=["reference", "metal"],
+        default="reference",
+        help="Compressed-cache backend (default: reference).",
+    )
+
+
+def _add_sink_tokens_argument(parser: argparse.ArgumentParser) -> None:
+    """Add attention-sink token count for quality preservation."""
+    parser.add_argument(
+        "--sink-tokens",
+        type=int,
+        default=0,
+        help="Keep first N tokens in FP16 (attention sink, default: 0).",
+    )
+
+
 def _cmd_generate(args: argparse.Namespace) -> None:
     """Generate text with baseline or compressed KV cache."""
     from mlx_turboquant.integration.generate_wrapper import (
@@ -96,8 +127,11 @@ def _cmd_generate(args: argparse.Namespace) -> None:
             tokenizer,
             args.prompt,
             kv_bits=args.kv_bits,
+            value_kv_bits=args.value_kv_bits,
+            backend=args.backend,
             max_tokens=args.max_tokens,
             temp=args.temp,
+            sink_tokens=args.sink_tokens,
         )
     else:
         result = generate_baseline(
@@ -130,18 +164,29 @@ def _cmd_compare(args: argparse.Namespace) -> None:
         temp=args.temp,
     )
 
-    print(f"Running compressed ({args.kv_bits}-bit)...")
+    compressed_label = (
+        f"{args.kv_bits}-bit"
+        if args.value_kv_bits in (None, args.kv_bits) and args.backend == "reference"
+        else (
+            f"k{args.kv_bits}/v{args.value_kv_bits or args.kv_bits}-bit"
+            + (f" ({args.backend})" if args.backend != "reference" else "")
+        )
+    )
+    print(f"Running compressed ({compressed_label})...")
     compressed = generate_with_compressed_cache(
         model,
         tokenizer,
         args.prompt,
         kv_bits=args.kv_bits,
+        value_kv_bits=args.value_kv_bits,
+        backend=args.backend,
         max_tokens=args.max_tokens,
         temp=args.temp,
+        sink_tokens=args.sink_tokens,
     )
 
     _print_result(baseline, header="BASELINE")
-    _print_result(compressed, header=f"COMPRESSED ({args.kv_bits}-bit)")
+    _print_result(compressed, header=compressed.cache_mode)
 
     if baseline.cache_bytes > 0 and compressed.cache_bytes > 0:
         ratio = baseline.cache_bytes / compressed.cache_bytes
@@ -252,10 +297,28 @@ def _cmd_bench(args: argparse.Namespace) -> None:
         max_tokens=max_tokens,
     )
 
+    # Evaluate promotion gates
+    from mlx_turboquant.bench.promotion import evaluate_profiles
+
+    verdicts = evaluate_profiles(qual_results, lat_results)
+
     # Generate report
     output_dir = args.output_dir
-    generate_report(mem_results, lat_results, qual_results, output_dir, model_name=args.model)
+    generate_report(
+        mem_results, lat_results, qual_results, output_dir,
+        model_name=args.model, verdicts=verdicts,
+    )
     print(f"\nReport written to {output_dir}/results.json and {output_dir}/BENCHMARKS.md")
+
+    # Enforce gate if requested
+    if args.gate:
+        failed = [v for v in verdicts if not v.passes]
+        if failed:
+            print("\nPromotion gate FAILED:")
+            for v in failed:
+                print(f"  {v.cache_mode}: {', '.join(v.failures)}")
+            raise SystemExit(1)
+        print(f"\nPromotion gate PASSED: {len(verdicts)} profile(s) meet thresholds.")
 
 
 def main() -> None:
@@ -277,6 +340,9 @@ def main() -> None:
         help="Cache mode (default: baseline; compressed is experimental)",
     )
     _add_kv_bits_argument(gen, help_text="Compression bits (choices: 2, 3, 4; default: 3)")
+    _add_value_kv_bits_argument(gen)
+    _add_backend_argument(gen)
+    _add_sink_tokens_argument(gen)
     gen.add_argument("--max-tokens", type=int, default=256, help="Max tokens to generate")
     gen.add_argument("--temp", type=float, default=0.0, help="Sampling temperature")
     gen.set_defaults(func=_cmd_generate)
@@ -286,6 +352,9 @@ def main() -> None:
     cmp.add_argument("--model", required=True, help="HuggingFace model path")
     cmp.add_argument("--prompt", required=True, help="Input prompt")
     _add_kv_bits_argument(cmp, help_text="Compression bits (choices: 2, 3, 4; default: 3)")
+    _add_value_kv_bits_argument(cmp)
+    _add_backend_argument(cmp)
+    _add_sink_tokens_argument(cmp)
     cmp.add_argument("--max-tokens", type=int, default=256, help="Max tokens to generate")
     cmp.add_argument("--temp", type=float, default=0.0, help="Sampling temperature")
     cmp.set_defaults(func=_cmd_compare)
@@ -309,6 +378,11 @@ def main() -> None:
         help_text="Compression bits for quick suite (choices: 2, 3, 4; default: 3)",
     )
     bench.add_argument("--output-dir", default=".", help="Output directory for reports")
+    bench.add_argument(
+        "--gate",
+        action="store_true",
+        help="Enforce promotion thresholds; exit non-zero if any profile fails.",
+    )
     bench.set_defaults(func=_cmd_bench)
 
     parsed = parser.parse_args()

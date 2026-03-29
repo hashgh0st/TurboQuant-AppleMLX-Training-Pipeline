@@ -26,6 +26,9 @@ class MemoryReport:
     head_dim: int
     kv_bits: int
     seq_len: int
+    value_kv_bits: int | None = None
+    sink_tokens: int = 0
+    cache_mode: str | None = None
 
 
 def estimate_memory(
@@ -34,34 +37,51 @@ def estimate_memory(
     head_dim: int,
     kv_bits: int,
     seq_len: int,
+    value_kv_bits: int | None = None,
+    sink_tokens: int = 0,
 ) -> MemoryReport:
     """Formula-based memory estimate for baseline vs compressed cache.
 
     Baseline fp16: 2 (K+V) * layers * kv_heads * head_dim * 2 bytes * seq_len
-    Compressed: 2 (K+V) * layers * kv_heads * (packed_bytes + norm_bytes) * seq_len
+    Compressed: sink tokens in FP16 + remaining tokens compressed.
     """
     # Baseline: fp16 storage for both K and V
     bpt_baseline = 2 * num_kv_heads * head_dim * 2  # bytes per token per layer (K+V, fp16)
     baseline = bpt_baseline * num_layers * seq_len
 
-    # Compressed: packed uint32 + float16 norm per vector, for K and V
-    packed_bytes = packed_dim(head_dim, kv_bits) * 4  # uint32 = 4 bytes each
-    norm_bytes = 2  # float16
-    bpt_compressed = 2 * num_kv_heads * (packed_bytes + norm_bytes)
-    compressed = bpt_compressed * num_layers * seq_len
+    # Sink tokens: stored in FP16 (same cost as baseline)
+    actual_sink = min(sink_tokens, seq_len)
+    sink_bytes = bpt_baseline * num_layers * actual_sink
 
-    ratio = baseline / compressed if compressed > 0 else float("inf")
+    # Compressed: packed uint32 + float16 norm per vector, for K and V
+    compressed_tokens = seq_len - actual_sink
+    value_bits = kv_bits if value_kv_bits is None else value_kv_bits
+    key_packed_bytes = packed_dim(head_dim, kv_bits) * 4  # uint32 = 4 bytes each
+    value_packed_bytes = packed_dim(head_dim, value_bits) * 4
+    norm_bytes = 2  # float16
+    bpt_compressed = num_kv_heads * (
+        (key_packed_bytes + norm_bytes) + (value_packed_bytes + norm_bytes)
+    )
+    compressed_portion = bpt_compressed * num_layers * compressed_tokens
+
+    total_compressed = sink_bytes + compressed_portion
+    ratio = baseline / total_compressed if total_compressed > 0 else float("inf")
+
+    # Bytes per token across all layers (weighted average including sink)
+    bpt_all_layers = total_compressed // seq_len if seq_len > 0 else bpt_compressed * num_layers
 
     return MemoryReport(
         baseline_bytes=baseline,
-        compressed_bytes=compressed,
+        compressed_bytes=total_compressed,
         compression_ratio=ratio,
         bytes_per_token_baseline=bpt_baseline * num_layers,
-        bytes_per_token_compressed=bpt_compressed * num_layers,
+        bytes_per_token_compressed=bpt_all_layers,
         num_layers=num_layers,
         num_kv_heads=num_kv_heads,
         head_dim=head_dim,
         kv_bits=kv_bits,
+        value_kv_bits=value_bits,
+        sink_tokens=actual_sink,
         seq_len=seq_len,
     )
 

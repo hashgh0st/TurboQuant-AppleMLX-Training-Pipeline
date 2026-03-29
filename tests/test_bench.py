@@ -10,9 +10,15 @@ import pytest
 
 import mlx_turboquant.bench.quality as quality_module
 from mlx_turboquant.bench.memory import benchmark_memory
+from mlx_turboquant.bench.promotion import (
+    _NO_DIVERGE,
+    ProfileVerdict,
+    evaluate_profiles,
+)
 from mlx_turboquant.bench.quality import QualityResult, benchmark_quality
 from mlx_turboquant.bench.report import generate_report
 from mlx_turboquant.cache.memory_accounting import MemoryReport
+from mlx_turboquant.integration.compression_profile import CompressionProfile
 from mlx_turboquant.integration.generate_wrapper import GenerationResult
 
 
@@ -54,7 +60,10 @@ class TestQualityResult:
     def test_dataclass_fields(self) -> None:
         r = QualityResult(
             prompt_id="test",
+            cache_mode="compressed-3bit",
             kv_bits=3,
+            value_kv_bits=3,
+            backend="reference",
             token_match_ratio=0.85,
             first_divergence_position=3,
             baseline_tokens=50,
@@ -136,6 +145,34 @@ class TestBenchmarkQuality:
         result = benchmark_quality(None, None, {"prompt": "hello"}, kv_bits_list=[3])[0]
         assert result.first_divergence_position == 0
 
+    def test_profiles_propagate_variant_metadata(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        baseline = self._result([1, 2, 3])
+        compressed = GenerationResult(
+            text="",
+            tokens=[1, 2, 3],
+            tokens_generated=3,
+            ttft_ms=0.0,
+            decode_tokens_per_sec=0.0,
+            cache_bytes=0,
+            cache_mode="compressed-k3v4bit-metal",
+        )
+        monkeypatch.setattr(quality_module, "generate_baseline", lambda *args, **kwargs: baseline)
+        monkeypatch.setattr(
+            quality_module,
+            "generate_with_compressed_cache",
+            lambda *args, **kwargs: compressed,
+        )
+
+        result = benchmark_quality(
+            None,
+            None,
+            {"prompt": "hello"},
+            profiles=[CompressionProfile(3, value_bits=4, backend="metal")],
+        )[0]
+        assert result.cache_mode == "compressed-k3v4bit-metal"
+        assert result.value_kv_bits == 4
+        assert result.backend == "metal"
+
 
 class TestReport:
     def test_generates_files(self) -> None:
@@ -168,7 +205,10 @@ class TestReport:
         qual = [
             QualityResult(
                 prompt_id="test",
+                cache_mode="compressed-3bit",
                 kv_bits=3,
+                value_kv_bits=3,
+                backend="reference",
                 token_match_ratio=0.9,
                 first_divergence_position=5,
                 baseline_tokens=50,
@@ -195,3 +235,135 @@ class TestReport:
             assert "## Latency" in md
             assert "## Quality" in md
             assert "4.0x" in md
+
+
+def _qr(
+    cache_mode: str = "compressed-3bit",
+    token_match: float = 0.90,
+    first_div: int = 15,
+) -> QualityResult:
+    return QualityResult(
+        prompt_id="test",
+        cache_mode=cache_mode,
+        kv_bits=3,
+        value_kv_bits=3,
+        backend="reference",
+        token_match_ratio=token_match,
+        first_divergence_position=first_div,
+        baseline_tokens=50,
+        compressed_tokens=50,
+    )
+
+
+def _lr(cache_mode: str = "baseline", tok_s: float = 200.0) -> GenerationResult:
+    return GenerationResult(
+        text="",
+        tokens=[1, 2, 3],
+        tokens_generated=3,
+        ttft_ms=10.0,
+        decode_tokens_per_sec=tok_s,
+        cache_bytes=0,
+        cache_mode=cache_mode,
+    )
+
+
+class TestPromotion:
+    def test_all_pass(self) -> None:
+        qrs = [_qr(token_match=0.90, first_div=20)]
+        lrs = [_lr("baseline", 200.0), _lr("compressed-3bit", 150.0)]
+        verdicts = evaluate_profiles(qrs, lrs)
+        assert len(verdicts) == 1
+        assert verdicts[0].passes
+        assert verdicts[0].failures == []
+
+    def test_token_match_fails(self) -> None:
+        qrs = [_qr(token_match=0.50)]
+        lrs = [_lr("baseline", 200.0), _lr("compressed-3bit", 150.0)]
+        verdicts = evaluate_profiles(qrs, lrs)
+        assert not verdicts[0].passes
+        assert any("token_match" in f for f in verdicts[0].failures)
+
+    def test_first_diverge_fails(self) -> None:
+        qrs = [_qr(first_div=3)]
+        lrs = [_lr("baseline", 200.0), _lr("compressed-3bit", 150.0)]
+        verdicts = evaluate_profiles(qrs, lrs)
+        assert not verdicts[0].passes
+        assert any("first_diverge" in f for f in verdicts[0].failures)
+
+    def test_decode_slowdown_fails(self) -> None:
+        qrs = [_qr()]
+        lrs = [_lr("baseline", 300.0), _lr("compressed-3bit", 50.0)]  # 6x slowdown
+        verdicts = evaluate_profiles(qrs, lrs)
+        assert not verdicts[0].passes
+        assert any("decode_slowdown" in f for f in verdicts[0].failures)
+
+    def test_no_baseline_latency_skips_slowdown(self) -> None:
+        qrs = [_qr()]
+        lrs = [_lr("compressed-3bit", 100.0)]  # no baseline
+        verdicts = evaluate_profiles(qrs, lrs)
+        # Should still pass — slowdown can't be evaluated without baseline
+        assert verdicts[0].passes
+
+    def test_multiple_prompts_averaged(self) -> None:
+        qrs = [
+            _qr(token_match=0.95, first_div=20),
+            _qr(token_match=0.65, first_div=5),  # bad prompt
+        ]
+        lrs = [_lr("baseline", 200.0), _lr("compressed-3bit", 150.0)]
+        verdicts = evaluate_profiles(qrs, lrs)
+        assert verdicts[0].avg_token_match == pytest.approx(0.80)
+        assert verdicts[0].min_first_diverge == 5
+
+    def test_identical_tokens_treated_as_passing(self) -> None:
+        """first_divergence_position=-1 means perfect match."""
+        qrs = [_qr(token_match=1.0, first_div=-1)]
+        lrs = [_lr("baseline", 200.0), _lr("compressed-3bit", 150.0)]
+        verdicts = evaluate_profiles(qrs, lrs)
+        assert verdicts[0].passes
+        assert verdicts[0].min_first_diverge == _NO_DIVERGE
+
+    def test_multiple_profiles_separate_verdicts(self) -> None:
+        qrs = [
+            _qr(cache_mode="compressed-3bit", token_match=0.90, first_div=20),
+            _qr(cache_mode="compressed-2bit", token_match=0.30, first_div=2),
+        ]
+        lrs = [
+            _lr("baseline", 200.0),
+            _lr("compressed-3bit", 150.0),
+            _lr("compressed-2bit", 100.0),
+        ]
+        verdicts = evaluate_profiles(qrs, lrs)
+        assert len(verdicts) == 2
+        by_mode = {v.cache_mode: v for v in verdicts}
+        assert by_mode["compressed-3bit"].passes
+        assert not by_mode["compressed-2bit"].passes
+
+
+class TestReportWithVerdicts:
+    def test_promotion_section_in_markdown(self) -> None:
+        verdicts = [
+            ProfileVerdict(
+                cache_mode="compressed-3bit",
+                avg_token_match=0.90,
+                min_first_diverge=20,
+                decode_slowdown=1.5,
+                passes=True,
+                failures=[],
+            ),
+            ProfileVerdict(
+                cache_mode="compressed-2bit",
+                avg_token_match=0.30,
+                min_first_diverge=2,
+                decode_slowdown=2.0,
+                passes=False,
+                failures=["token_match 30% < 80%", "first_diverge 2 < 10"],
+            ),
+        ]
+        with tempfile.TemporaryDirectory() as tmpdir:
+            generate_report([], [], [], tmpdir, model_name="test", verdicts=verdicts)
+            md = (Path(tmpdir) / "BENCHMARKS.md").read_text()
+            assert "## Promotion Status" in md
+            assert "PASS" in md
+            assert "FAIL" in md
+            assert "compressed-3bit" in md
+            assert "compressed-2bit" in md

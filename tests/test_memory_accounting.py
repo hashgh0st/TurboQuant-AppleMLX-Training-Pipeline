@@ -33,6 +33,14 @@ class TestEstimate:
         r4 = estimate_memory(kv_bits=4, **base)
         assert r2.compression_ratio > r3.compression_ratio > r4.compression_ratio
 
+    def test_mixed_precision_sits_between_symmetric_3bit_and_4bit(self) -> None:
+        base = dict(num_layers=1, num_kv_heads=1, head_dim=128, seq_len=1000)
+        r3 = estimate_memory(kv_bits=3, **base)
+        mixed = estimate_memory(kv_bits=3, value_kv_bits=4, **base)
+        r4 = estimate_memory(kv_bits=4, **base)
+        assert r3.compressed_bytes < mixed.compressed_bytes < r4.compressed_bytes
+        assert r3.compression_ratio > mixed.compression_ratio > r4.compression_ratio
+
 
 class TestMeasure:
     def test_matches_estimate(self) -> None:

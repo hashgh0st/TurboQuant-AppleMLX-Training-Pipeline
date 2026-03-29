@@ -87,3 +87,28 @@ def test_compressed_uses_logical_bytes_and_tracks_allocated_bytes(
 
     assert result.cache_bytes == 1080
     assert result.cache_allocated_bytes == 1280
+
+
+def test_mixed_precision_compressed_mode_and_memory_accounting(
+    monkeypatch,
+) -> None:
+    caches = [
+        _FakeCache(nbytes=150, allocated_nbytes=768),
+        _FakeCache(nbytes=150, allocated_nbytes=768),
+    ]
+    monkeypatch.setattr(generate_wrapper, "make_compressed_cache", lambda *_args, **_kwargs: caches)
+    monkeypatch.setattr(generate_wrapper, "generate_step", _fake_generate_step)
+
+    result = generate_wrapper.generate_with_compressed_cache(
+        _FakeModel(),
+        _FakeTokenizer(),
+        "hello",
+        kv_bits=3,
+        value_kv_bits=4,
+        backend="metal",
+        max_tokens=2,
+    )
+
+    assert result.cache_mode == "compressed-k3v4bit-metal"
+    assert result.cache_bytes == 1200
+    assert result.cache_allocated_bytes == 1536
