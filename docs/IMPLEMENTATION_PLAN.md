@@ -349,7 +349,9 @@ class Stage1Codec:
 
 ---
 
-## Phase 2 — Compressed Cache Layer
+## Phase 2 — Compressed Cache Layer [COMPLETE]
+
+**Completed:** 2026-03-28
 
 ### Goal
 Build a `CompressedKVCache` that is duck-type compatible with MLX-LM's `KVCache`, stores KV vectors in compressed form using the Phase 1 codec, and provides accurate memory accounting.
@@ -500,12 +502,18 @@ def create_cache_layers(config: CacheConfig, codec: Stage1Codec) -> list[Compres
 - `test_compression_ratio`: 3-bit compression > 4x for typical models
 
 ### Exit Criteria
-- [ ] `CompressedKVCache` satisfies MLX-LM cache protocol (duck-typing)
-- [ ] `hasattr(cache, 'bits')` returns `False` (critical for correct SDPA dispatch)
-- [ ] GQA with num_kv_heads < num_attention_heads works correctly
-- [ ] Memory accounting formula matches measured usage within 5%
-- [ ] Incremental token-by-token updates produce same output as batch prefill
-- [ ] All cache tests pass
+- [x] `CompressedKVCache` satisfies MLX-LM cache protocol (duck-typing)
+- [x] `hasattr(cache, 'bits')` returns `False` (critical for correct SDPA dispatch)
+- [x] GQA with num_kv_heads < num_attention_heads works correctly
+- [x] Memory accounting formula matches measured usage within 5%
+- [x] Incremental token-by-token updates produce same output as batch prefill
+- [x] All cache tests pass
+
+### Post-Review Fixes Applied
+- Replaced array-slicing nbytes with pure arithmetic (avoids graph node creation)
+- Fixed state setter type to match getter (tuple[mx.array | None, mx.array | None])
+- Removed 3 type: ignore[index] suppressions
+- Noted O(seq_len) full-decode-per-step as known optimization for Phase 5
 
 ---
 
