@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import subprocess
 import sys
 import types
@@ -9,7 +10,9 @@ import types
 import pytest
 
 import mlx_turboquant.cli as cli
+import mlx_turboquant.integration.generate_wrapper as generate_wrapper
 from mlx_turboquant.constants import CANONICAL_SAMPLE_MODEL
+from mlx_turboquant.integration.generate_wrapper import GenerationResult
 
 EXTERNAL_MODEL_FAILURE_MARKERS = (
     "repository not found",
@@ -43,6 +46,8 @@ class TestHelp:
         assert "--model" in result.stdout
         assert "--prompt" in result.stdout
         assert "--cache-mode" in result.stdout
+        assert "default: baseline" in result.stdout
+        assert "experimental" in result.stdout
 
     def test_compare_help(self) -> None:
         result = _run_cli("compare", "--help")
@@ -94,6 +99,72 @@ class TestLoadModel:
             "Failed to load model 'bad/model': repo not found or access denied. "
             "Verify the model ID and Hugging Face authentication."
         )
+
+
+def test_generate_defaults_to_baseline(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, str] = {}
+
+    def _capture(args: argparse.Namespace) -> None:
+        captured["cache_mode"] = args.cache_mode
+
+    monkeypatch.setattr(cli, "_cmd_generate", _capture)
+    monkeypatch.setattr(
+        sys, "argv", ["mlx-tq", "generate", "--model", "dummy/model", "--prompt", "hi"]
+    )
+
+    cli.main()
+
+    assert captured["cache_mode"] == "baseline"
+
+
+def test_compare_uses_logical_cache_bytes_for_headline(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    baseline = GenerationResult(
+        text="baseline",
+        tokens=[1, 2],
+        tokens_generated=2,
+        ttft_ms=1.0,
+        decode_tokens_per_sec=2.0,
+        cache_bytes=4096,
+        cache_mode="baseline",
+        cache_allocated_bytes=32768,
+    )
+    compressed = GenerationResult(
+        text="compressed",
+        tokens=[1, 2],
+        tokens_generated=2,
+        ttft_ms=1.0,
+        decode_tokens_per_sec=2.0,
+        cache_bytes=1024,
+        cache_mode="compressed-3bit",
+        cache_allocated_bytes=1024,
+    )
+
+    monkeypatch.setattr(cli, "_load_model", lambda _model: (object(), object()))
+    monkeypatch.setattr(
+        generate_wrapper,
+        "generate_baseline",
+        lambda *args, **kwargs: baseline,
+    )
+    monkeypatch.setattr(
+        generate_wrapper,
+        "generate_with_compressed_cache",
+        lambda *args, **kwargs: compressed,
+    )
+
+    cli._cmd_compare(
+        argparse.Namespace(
+            model="dummy/model",
+            prompt="hello",
+            kv_bits=3,
+            max_tokens=2,
+            temp=0.0,
+        )
+    )
+    output = capsys.readouterr().out
+    assert "Compression: 4.0x" in output
+    assert "Allocated buffers: 32.0 KB vs 1.0 KB (32.0x)" in output
 
 
 @pytest.mark.slow()

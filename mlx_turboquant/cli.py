@@ -18,7 +18,12 @@ def _print_result(result: GenerationResult, header: str | None = None) -> None:
     print(f"\nTokens: {result.tokens_generated}")
     print(f"TTFT: {result.ttft_ms:.1f} ms")
     print(f"Decode: {result.decode_tokens_per_sec:.1f} tok/s")
-    print(f"Cache: {result.cache_bytes / 1024:.1f} KB")
+    print(f"Cache (logical): {result.cache_bytes / 1024:.1f} KB")
+    if (
+        result.cache_allocated_bytes is not None
+        and result.cache_allocated_bytes != result.cache_bytes
+    ):
+        print(f"Allocated cache: {result.cache_allocated_bytes / 1024:.1f} KB")
 
 
 def _format_model_load_error(model_name: str, exc: Exception) -> str:
@@ -143,6 +148,24 @@ def _cmd_compare(args: argparse.Namespace) -> None:
         savings = (1 - compressed.cache_bytes / baseline.cache_bytes) * 100
         print(f"\nCompression: {ratio:.1f}x ({savings:.0f}% memory saved)")
 
+    baseline_allocated = baseline.cache_allocated_bytes or baseline.cache_bytes
+    compressed_allocated = compressed.cache_allocated_bytes or compressed.cache_bytes
+    if (
+        baseline_allocated > 0
+        and compressed_allocated > 0
+        and (
+            baseline_allocated != baseline.cache_bytes
+            or compressed_allocated != compressed.cache_bytes
+        )
+    ):
+        alloc_ratio = baseline_allocated / compressed_allocated
+        print(
+            "Allocated buffers: "
+            f"{baseline_allocated / 1024:.1f} KB vs "
+            f"{compressed_allocated / 1024:.1f} KB "
+            f"({alloc_ratio:.1f}x)"
+        )
+
 
 def _cmd_info(args: argparse.Namespace) -> None:
     """Show model architecture and memory estimates."""
@@ -249,9 +272,9 @@ def main() -> None:
     gen.add_argument("--prompt", required=True, help="Input prompt")
     gen.add_argument(
         "--cache-mode",
-        choices=["compressed", "baseline"],
-        default="compressed",
-        help="Cache mode (default: compressed)",
+        choices=["baseline", "compressed"],
+        default="baseline",
+        help="Cache mode (default: baseline; compressed is experimental)",
     )
     _add_kv_bits_argument(gen, help_text="Compression bits (choices: 2, 3, 4; default: 3)")
     gen.add_argument("--max-tokens", type=int, default=256, help="Max tokens to generate")

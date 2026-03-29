@@ -55,8 +55,8 @@ def generate_report(
     if latency_results:
         lines.append("## Latency")
         lines.append("")
-        lines.append("| Mode | TTFT (ms) | Decode (tok/s) | Tokens | Cache (KB) |")
-        lines.append("|------|----------|----------------|--------|-----------|")
+        lines.append("| Mode | TTFT (ms) | Decode (tok/s) | Tokens | Cache (KB, logical) |")
+        lines.append("|------|----------|----------------|--------|---------------------|")
         for lr in latency_results:
             lines.append(
                 f"| {lr.cache_mode} | {lr.ttft_ms:.1f} | "

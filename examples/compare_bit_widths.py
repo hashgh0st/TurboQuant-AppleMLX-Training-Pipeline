@@ -1,4 +1,4 @@
-"""Compare 2-bit, 3-bit, and 4-bit KV cache compression side by side.
+"""Compare experimental 2-bit, 3-bit, and 4-bit KV cache modes side by side.
 
 Usage:
     python examples/compare_bit_widths.py
@@ -25,10 +25,12 @@ def main() -> None:
     print("\n=== BASELINE (fp16 cache) ===")
     baseline = generate_baseline(model, tokenizer, PROMPT, max_tokens=80)
     print(baseline.text)
-    print(f"  Cache: {baseline.cache_bytes / 1024:.1f} KB")
+    print(f"  Logical cache: {baseline.cache_bytes / 1024:.1f} KB")
+    if baseline.cache_allocated_bytes not in (None, baseline.cache_bytes):
+        print(f"  Allocated cache: {baseline.cache_allocated_bytes / 1024:.1f} KB")
 
     for bits in [4, 3, 2]:
-        print(f"\n=== {bits}-BIT COMPRESSED ===")
+        print(f"\n=== {bits}-BIT COMPRESSED (EXPERIMENTAL) ===")
         result = generate_with_compressed_cache(
             model,
             tokenizer,
@@ -39,7 +41,12 @@ def main() -> None:
         print(result.text)
 
         ratio = baseline.cache_bytes / result.cache_bytes if result.cache_bytes > 0 else 0
-        print(f"  Cache: {result.cache_bytes / 1024:.1f} KB ({ratio:.1f}x compression)")
+        print(
+            f"  Logical cache: {result.cache_bytes / 1024:.1f} KB "
+            f"({ratio:.1f}x logical compression)"
+        )
+        if result.cache_allocated_bytes not in (None, result.cache_bytes):
+            print(f"  Allocated cache: {result.cache_allocated_bytes / 1024:.1f} KB")
         print(f"  Decode: {result.decode_tokens_per_sec:.1f} tok/s")
 
         # Token match with baseline

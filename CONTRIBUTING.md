@@ -3,8 +3,8 @@
 ## Development Setup
 
 ```bash
-git clone https://github.com/dak/mlx-turboquant.git
-cd mlx-turboquant
+git clone https://github.com/hashgh0st/TurboQuant-AppleMLX-Training-Pipeline.git
+cd TurboQuant-AppleMLX-Training-Pipeline
 uv sync --all-extras
 uv run pre-commit install
 ```
@@ -27,6 +27,8 @@ uv run pytest               # tests
 - Keep the codec hot path free of Python loops (use vectorized MLX ops)
 - Do not expose a `bits` attribute on cache classes (see TDD for explanation)
 - Label all benchmark claims as estimates unless validated locally
+- Keep docs aligned with the current CLI posture: baseline is the default path, compressed mode is experimental
+- When documenting cache memory, distinguish logical occupied bytes from allocated backing-buffer bytes; user-facing ratios should use logical bytes
 
 ## Running Slow Tests
 

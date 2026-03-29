@@ -586,12 +586,13 @@ def generate_baseline(
 @dataclass
 class GenerationResult:
     text: str
+    tokens: list[int]
     tokens_generated: int
-    prefill_time_ms: float
+    ttft_ms: float
     decode_tokens_per_sec: float
-    peak_memory_bytes: int
-    cache_bytes: int
+    cache_bytes: int  # logical occupied cache bytes
     cache_mode: str  # "baseline" | "compressed-Xbit"
+    cache_allocated_bytes: int | None
 ```
 
 #### `mlx_turboquant/cli.py`
@@ -600,9 +601,13 @@ class GenerationResult:
 def main():
     """CLI entry point: mlx-tq"""
     # Subcommands:
-    #   generate  — generate text with compressed cache
+    #   generate  — generate text, baseline by default
     #   compare   — run baseline and compressed side-by-side
     #   info      — show model info and memory estimates
+
+    # mlx-tq generate --model mlx-community/Qwen2.5-0.5B-Instruct-4bit \
+    #                  --prompt "Explain quantum computing" \
+    #                  --cache-mode baseline
 
     # mlx-tq generate --model mlx-community/Qwen2.5-0.5B-Instruct-4bit \
     #                  --prompt "Explain quantum computing" \
@@ -622,8 +627,8 @@ def main():
 - `test_generate_compressed_produces_text`: generates non-empty output
 - `test_generate_baseline_produces_text`: baseline generation works
 - `test_compare_produces_both_results`: both modes return valid results
-- `test_compressed_output_reasonable`: compressed output is coherent (not garbage)
-- `test_generate_result_has_metrics`: timing and memory fields populated
+- `test_compressed_output_drift_is_measurable`: compressed output quality drift is surfaced instead of hidden
+- `test_generate_result_has_metrics`: timing plus logical/allocated cache fields populated
 
 #### `tests/test_cli.py`
 - `test_cli_info_runs`: `mlx-tq info` exits cleanly
@@ -633,7 +638,8 @@ def main():
 **Note**: Integration tests require downloading a model. They are marked with `@pytest.mark.slow`, and the CLI smoke coverage should skip automatically when external model access or Hugging Face authentication is unavailable.
 
 ### Exit Criteria
-- [x] `mlx-tq generate --model mlx-community/Qwen2.5-0.5B-Instruct-4bit --prompt "Hello" --cache-mode compressed --kv-bits 3` produces coherent text
+- [x] `mlx-tq generate --model mlx-community/Qwen2.5-0.5B-Instruct-4bit --prompt "Hello"` runs baseline generation with no extra flags
+- [x] `mlx-tq generate --model mlx-community/Qwen2.5-0.5B-Instruct-4bit --prompt "Hello" --cache-mode compressed --kv-bits 3` runs the experimental compressed path end to end
 - [x] `mlx-tq compare` shows side-by-side baseline vs compressed output with metrics
 - [x] `mlx-tq info` displays model architecture and memory estimates
 - [x] No modifications to MLX-LM source code — pure wrapper/adapter pattern
@@ -803,8 +809,8 @@ mlx-tq bench --model mlx-community/Qwen2.5-0.5B-Instruct-4bit --suite quick
 ### Exit Criteria
 - [x] `mlx-tq bench --suite quick` completes on Qwen 0.5B in < 5 minutes
 - [x] Memory benchmark shows 3-bit achieves > 4x compression ratio
-- [x] Latency benchmark shows decode overhead < 30% vs baseline
-- [x] Quality benchmark shows 3-bit token match > 80% on short prompts (temp=0)
+- [ ] Current quick benchmark on Qwen 0.5B does not meet the decode-overhead target; recent runs measured roughly 36-38% slowdown vs baseline
+- [ ] Current quick benchmark on Qwen 0.5B does not meet the 3-bit quality target; recent runs measured 0-6% token match on the sample prompts
 - [x] Reports render correctly as Markdown tables
 - [x] All benchmark results are reproducible (< 5% variance across runs)
 
@@ -812,6 +818,10 @@ mlx-tq bench --model mlx-community/Qwen2.5-0.5B-Instruct-4bit --suite quick
 - Bench modules compose existing code (GenerationResult, estimate_memory, generate_with_compressed_cache) instead of reimplementing
 - benchmark_latency/quality take loaded model+tokenizer, not model path (avoids expensive reloading)
 - Memory benchmark is pure calculation — no model loading needed
+- `GenerationResult.cache_bytes` now records logical occupied cache bytes for both baseline and compressed modes
+- `GenerationResult.cache_allocated_bytes` now carries raw backing-buffer allocation separately for short-run diagnostics
+- `mlx-tq generate` now defaults to baseline mode; compressed mode is an explicit experimental opt-in
+- Docs/examples now avoid unsupported latency and quality claims for the canonical sample model
 
 ---
 
@@ -979,7 +989,13 @@ Phases 0→3 are strictly sequential. Phases 4 and 5 can be developed in paralle
 # Install
 uv sync
 
-# Generate with compressed cache
+# Generate with the baseline cache (default)
+mlx-tq generate \
+  --model mlx-community/Qwen2.5-0.5B-Instruct-4bit \
+  --prompt "Explain KV cache compression in transformers" \
+  --max-tokens 200
+
+# Opt into the experimental compressed cache
 mlx-tq generate \
   --model mlx-community/Qwen2.5-0.5B-Instruct-4bit \
   --prompt "Explain KV cache compression in transformers" \

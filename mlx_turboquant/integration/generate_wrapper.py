@@ -14,7 +14,11 @@ import mlx.core as mx
 from mlx_lm.generate import generate_step
 from mlx_lm.models.cache import make_prompt_cache
 
-from mlx_turboquant.integration.mlx_lm_adapter import make_compressed_cache
+from mlx_turboquant.cache.memory_accounting import estimate_memory
+from mlx_turboquant.integration.mlx_lm_adapter import (
+    introspect_model,
+    make_compressed_cache,
+)
 
 
 @dataclass
@@ -26,8 +30,49 @@ class GenerationResult:
     tokens_generated: int
     ttft_ms: float  # time to first token (includes prefill + first decode step)
     decode_tokens_per_sec: float
-    cache_bytes: int
+    cache_bytes: int  # logical occupied bytes for the generated cache state
     cache_mode: str  # "baseline" | "compressed-{bits}bit"
+    cache_allocated_bytes: int | None = None
+
+
+def _cache_occupied_tokens(prompt_cache: list[Any]) -> int:
+    """Return the occupied token count from the largest cache layer."""
+    sizes: list[int] = []
+    for layer in prompt_cache:
+        size = getattr(layer, "size", None)
+        if callable(size):
+            sizes.append(int(size()))
+    return max(sizes, default=0)
+
+
+def _allocated_cache_bytes(prompt_cache: list[Any]) -> int:
+    """Return the raw backing-buffer bytes currently allocated across all layers."""
+    total = 0
+    for layer in prompt_cache:
+        allocated = getattr(layer, "allocated_nbytes", None)
+        total += int(allocated) if allocated is not None else int(layer.nbytes)
+    return total
+
+
+def _logical_cache_bytes(model: Any, prompt_cache: list[Any], *, kv_bits: int | None) -> int:
+    """Estimate occupied cache bytes from model geometry and live token count."""
+    occupied_tokens = _cache_occupied_tokens(prompt_cache)
+    if occupied_tokens == 0:
+        return 0
+
+    info = introspect_model(model)
+    baseline_bytes = 2 * info.num_layers * info.num_kv_heads * info.head_dim * 2 * occupied_tokens
+    if kv_bits is None:
+        return baseline_bytes
+
+    report = estimate_memory(
+        num_layers=info.num_layers,
+        num_kv_heads=info.num_kv_heads,
+        head_dim=info.head_dim,
+        kv_bits=kv_bits,
+        seq_len=occupied_tokens,
+    )
+    return report.compressed_bytes
 
 
 def generate_with_compressed_cache(
@@ -56,7 +101,8 @@ def generate_with_compressed_cache(
         max_tokens=max_tokens,
         temp=temp,
         cache_mode=f"compressed-{kv_bits}bit",
-        kv_bits=None,  # disable MLX-LM's affine quant
+        generate_step_kv_bits=None,  # disable MLX-LM's affine quant
+        logical_kv_bits=kv_bits,
     )
 
 
@@ -80,7 +126,8 @@ def generate_baseline(
         max_tokens=max_tokens,
         temp=temp,
         cache_mode="baseline",
-        kv_bits=None,
+        generate_step_kv_bits=None,
+        logical_kv_bits=None,
     )
 
 
@@ -92,7 +139,8 @@ def _run_generation(
     max_tokens: int,
     temp: float,
     cache_mode: str,
-    kv_bits: int | None,
+    generate_step_kv_bits: int | None,
+    logical_kv_bits: int | None,
 ) -> GenerationResult:
     """Shared generation loop for both compressed and baseline paths."""
     sampler = (
@@ -112,7 +160,7 @@ def _run_generation(
         model=model,
         sampler=sampler,
         prompt_cache=prompt_cache,
-        kv_bits=kv_bits,
+        kv_bits=generate_step_kv_bits,
         max_tokens=max_tokens,
     ):
         if first_token_time is None:
@@ -131,7 +179,8 @@ def _run_generation(
     decode_tokens = max(len(tokens_out) - 1, 1)
     decode_tok_per_sec = decode_tokens / decode_time if decode_time > 0 else 0.0
 
-    cache_bytes = sum(c.nbytes for c in prompt_cache)
+    cache_bytes = _logical_cache_bytes(model, prompt_cache, kv_bits=logical_kv_bits)
+    cache_allocated_bytes = _allocated_cache_bytes(prompt_cache)
     text = tokenizer.decode(tokens_out)
 
     return GenerationResult(
@@ -142,4 +191,5 @@ def _run_generation(
         decode_tokens_per_sec=decode_tok_per_sec,
         cache_bytes=cache_bytes,
         cache_mode=cache_mode,
+        cache_allocated_bytes=cache_allocated_bytes,
     )

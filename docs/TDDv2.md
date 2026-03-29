@@ -189,6 +189,15 @@ Where `aux_bytes` depends on what extra metadata the codec stores.
 
 The benchmark harness must report both the formula estimate and the observed storage usage.
 
+### Important reporting rule
+
+The project should track two different memory numbers:
+
+- **logical occupied bytes**: bytes implied by the current token count and storage formula,
+- **allocated bytes**: bytes reserved in backing buffers because of cache growth granularity.
+
+User-facing compare ratios and benchmark headlines should use logical occupied bytes. Allocated bytes are still useful, but only as diagnostic context for short runs and allocator behavior.
+
 ---
 
 ## 8. Codec design
@@ -323,6 +332,8 @@ def generate_with_compressed_cache(model, tokenizer, prompt, *, kv_bits=3, backe
 
 The wrapper must make it trivial to compare baseline and compressed cache on the same prompt and sampler settings.
 
+The wrapper should also expose both logical occupied cache bytes and allocated cache bytes so benchmark/report code does not confuse short-run allocation effects with true compression ratio.
+
 ---
 
 ## 13. Execution flow
@@ -372,7 +383,8 @@ The wrapper must make it trivial to compare baseline and compressed cache on the
 Required metrics:
 
 - peak memory,
-- bytes per token of cache,
+- logical bytes per token of cache,
+- allocated cache bytes as a diagnostic metric,
 - prefill seconds,
 - decode tok/s,
 - output drift versus baseline,

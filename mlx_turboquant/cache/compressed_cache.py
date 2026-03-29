@@ -208,3 +208,15 @@ class CompressedKVCache:
         packed_bytes = B * n_kv_heads * self.offset * self._pdim * 4
         norm_bytes = B * n_kv_heads * self.offset * 2
         return 2 * (packed_bytes + norm_bytes)  # 2x for K + V
+
+    @property
+    def allocated_nbytes(self) -> int:
+        """Backing-buffer bytes currently allocated for the compressed cache."""
+        if self._packed_keys is None:
+            return 0
+        B = self._packed_keys.shape[0]
+        n_kv_heads = self._packed_keys.shape[1]
+        alloc_steps = self._packed_keys.shape[2]
+        packed_bytes = B * n_kv_heads * alloc_steps * self._pdim * 4
+        norm_bytes = B * n_kv_heads * alloc_steps * 2
+        return 2 * (packed_bytes + norm_bytes)  # 2x for K + V

@@ -8,13 +8,13 @@ Apple-Silicon KV-cache compression for MLX/MLX-LM, inspired by the [TurboQuant](
 
 This is a **stage-1 prototype** — not a full reproduction of Google's two-stage TurboQuant system.
 
-## Benchmarks (Qwen 2.5-0.5B on M4 Mini 16 GB)
+## Memory Geometry (Qwen 2.5-0.5B)
 
 | Metric | Baseline | 3-bit Compressed |
 |--------|----------|-----------------|
-| Cache memory (4K tokens) | 48.0 MB | 11.2 MB (**4.3x**) |
-| Decode speed | 286 tok/s | 175 tok/s |
-| Cache per 100 tokens | 3072 KB | 160 KB |
+| Occupied cache at 4K tokens | 48.0 MB | 11.2 MB (**4.3x**) |
+
+Compressed generation is currently experimental. On the canonical sample model, recent quick benchmarks showed substantial quality loss and roughly 35-40% decode slowdown versus baseline, so benchmark it on your actual model and prompts before relying on it.
 
 ## How it works
 
@@ -48,19 +48,26 @@ At attention time, the process reverses: unpack, dequantize, inverse rotate, res
 ## Getting started
 
 ```bash
-git clone https://github.com/dak/mlx-turboquant.git
-cd mlx-turboquant
+git clone https://github.com/hashgh0st/TurboQuant-AppleMLX-Training-Pipeline.git
+cd TurboQuant-AppleMLX-Training-Pipeline
 uv sync
 ```
+
+The GitHub repository is currently named `TurboQuant-AppleMLX-Training-Pipeline`, while the Python package and CLI remain `mlx-turboquant` and `mlx-tq`.
 
 ## Usage
 
 ### CLI
 
 ```bash
-# Generate with compressed KV cache
+# Generate with the baseline cache (default)
 mlx-tq generate --model mlx-community/Qwen2.5-0.5B-Instruct-4bit \
-    --prompt "Explain KV cache compression" --kv-bits 3
+    --prompt "Explain KV cache compression"
+
+# Opt into the experimental compressed cache
+mlx-tq generate --model mlx-community/Qwen2.5-0.5B-Instruct-4bit \
+    --prompt "Explain KV cache compression" \
+    --cache-mode compressed --kv-bits 3
 
 # Compare baseline vs compressed side-by-side
 mlx-tq compare --model mlx-community/Qwen2.5-0.5B-Instruct-4bit \
@@ -74,6 +81,7 @@ mlx-tq bench --model mlx-community/Qwen2.5-0.5B-Instruct-4bit --suite quick
 ```
 
 `--kv-bits` is validated at the CLI boundary and currently supports `2`, `3`, or `4`.
+`generate` defaults to `baseline`; `--cache-mode compressed` is an explicit experimental opt-in.
 
 ### Python API
 
@@ -86,12 +94,21 @@ from mlx_turboquant.integration.generate_wrapper import (
 
 model, tokenizer = load("mlx-community/Qwen2.5-0.5B-Instruct-4bit")
 
-# Compressed generation
+# Safe default
+baseline = generate_baseline(
+    model, tokenizer, "Hello world", max_tokens=100,
+)
+print(baseline.text)
+print(f"Logical cache: {baseline.cache_bytes / 1024:.0f} KB")
+
+# Experimental compressed generation
 result = generate_with_compressed_cache(
     model, tokenizer, "Hello world", kv_bits=3, max_tokens=100,
 )
 print(result.text)
-print(f"Cache: {result.cache_bytes / 1024:.0f} KB")
+print(f"Logical cache: {result.cache_bytes / 1024:.0f} KB")
+if result.cache_allocated_bytes is not None:
+    print(f"Allocated cache: {result.cache_allocated_bytes / 1024:.0f} KB")
 ```
 
 See [`examples/`](examples/) for more.
@@ -99,6 +116,7 @@ See [`examples/`](examples/) for more.
 ## Troubleshooting
 
 - If model loading fails with a "repo not found or access denied" message, verify the model ID and your Hugging Face authentication.
+- `compare` and benchmark reports now headline logical occupied cache bytes. Short runs can have much larger allocated backing buffers, which are shown separately when relevant.
 - Slow CLI smoke tests depend on external model access and may skip automatically when the example model is unavailable.
 
 ## Project structure
@@ -117,7 +135,7 @@ mlx_turboquant/
 
 ```bash
 uv sync --all-extras          # install all deps
-uv run pytest                 # 171 tests
+uv run pytest                 # 182 tests
 uv run ruff check .           # lint
 uv run mypy mlx_turboquant/   # type check (strict)
 ```

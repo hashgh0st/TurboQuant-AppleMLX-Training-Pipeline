@@ -186,7 +186,7 @@ These are **engineering acceptance criteria**, not claims about the paper.
 ### P0 acceptance criteria
 
 1. **Reference path works end-to-end** on Apple Silicon for at least one small debug model and one practical instruct model.
-2. **Cache memory accounting is correct** within a small tolerance versus the implemented storage formula.
+2. **Cache memory accounting is correct** within a small tolerance versus the implemented storage formula, and clearly distinguishes logical occupied bytes from allocated backing-buffer bytes.
 3. **Benchmark mode is reproducible** on the same machine and model.
 4. **Quality regressions are visible and measurable**, not hidden.
 5. **Users can switch back to baseline cache** without changing the rest of their workflow.
@@ -235,6 +235,12 @@ mlx-tq generate --model <model> --prompt "..." --cache-mode stage1 --kv-bits 3
 mlx-tq bench --model <model> --prompt-file prompt.txt --kv-bits 3
 mlx-tq info --model <model>
 ```
+
+Current product posture:
+
+- baseline generation should remain the safe default,
+- compressed generation should be an explicit experimental opt-in until local benchmarks support a stronger claim,
+- compare and benchmark views should headline logical occupied cache bytes and may show allocated bytes only as diagnostic context.
 
 ### 11.2 Python API
 

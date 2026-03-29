@@ -7,6 +7,9 @@ Equivalent to:
     mlx-tq bench --model mlx-community/Qwen2.5-0.5B-Instruct-4bit --suite quick --output-dir benchmark_results
 
 Requires: mlx-community/Qwen2.5-0.5B-Instruct-4bit (downloaded automatically)
+
+The quick suite is a diagnostic benchmark. It measures current behavior; it is
+not a claim that compressed generation already meets any fixed quality or latency target.
 """
 
 import subprocess

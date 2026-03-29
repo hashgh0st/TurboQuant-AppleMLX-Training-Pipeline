@@ -178,6 +178,12 @@ Use this wording in the repo and docs:
 
 This wording is accurate, useful, and avoids overclaiming.
 
+For current UX and reporting, the framing should also stay conservative:
+
+- baseline generation is the default path,
+- compressed generation is an experimental opt-in,
+- benchmark headlines should use logical occupied cache bytes, not short-run backing-buffer allocation artifacts.
+
 ---
 
 ## 8. Recommended build order
