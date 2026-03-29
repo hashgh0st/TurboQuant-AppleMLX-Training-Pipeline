@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import argparse
 import sys
+from typing import Any
 
+from mlx_turboquant.constants import SUPPORTED_KV_BITS
 from mlx_turboquant.integration.generate_wrapper import GenerationResult
 
 
@@ -19,18 +21,69 @@ def _print_result(result: GenerationResult, header: str | None = None) -> None:
     print(f"Cache: {result.cache_bytes / 1024:.1f} KB")
 
 
-def _cmd_generate(args: argparse.Namespace) -> None:
-    """Generate text with baseline or compressed KV cache."""
+def _format_model_load_error(model_name: str, exc: Exception) -> str:
+    """Render a concise, user-facing model load error."""
+    detail = str(exc)
+    lowered = detail.lower()
+
+    if (
+        "repository not found" in lowered
+        or "repositorynotfounderror" in lowered
+        or "401" in lowered
+        or "invalid username or password" in lowered
+    ):
+        reason = "repo not found or access denied"
+        next_step = "Verify the model ID and Hugging Face authentication."
+    elif "403" in lowered or "gated" in lowered:
+        reason = "model access is gated"
+        next_step = "Authenticate with Hugging Face and accept any required model terms."
+    elif (
+        "connect" in lowered
+        or "network" in lowered
+        or "timed out" in lowered
+        or "name or service not known" in lowered
+        or "temporary failure" in lowered
+    ):
+        reason = "network or download error"
+        next_step = "Check connectivity and retry."
+    else:
+        reason = "unexpected loader error"
+        next_step = detail.splitlines()[-1] if detail else exc.__class__.__name__
+
+    return f"Failed to load model '{model_name}': {reason}. {next_step}"
+
+
+def _load_model(model_name: str) -> tuple[Any, Any]:
+    """Load an MLX-LM model and exit cleanly on expected user-facing failures."""
     from mlx_lm import load
 
+    try:
+        loaded = load(model_name)
+    except Exception as exc:
+        raise SystemExit(_format_model_load_error(model_name, exc)) from None
+    return loaded[0], loaded[1]
+
+
+def _add_kv_bits_argument(parser: argparse.ArgumentParser, *, help_text: str) -> None:
+    """Add a validated kv-bits argument shared by CLI subcommands."""
+    parser.add_argument(
+        "--kv-bits",
+        type=int,
+        choices=SUPPORTED_KV_BITS,
+        default=3,
+        help=help_text,
+    )
+
+
+def _cmd_generate(args: argparse.Namespace) -> None:
+    """Generate text with baseline or compressed KV cache."""
     from mlx_turboquant.integration.generate_wrapper import (
         generate_baseline,
         generate_with_compressed_cache,
     )
 
     print(f"Loading model: {args.model}...")
-    loaded = load(args.model)
-    model, tokenizer = loaded[0], loaded[1]
+    model, tokenizer = _load_model(args.model)
 
     if args.cache_mode == "compressed":
         result = generate_with_compressed_cache(
@@ -47,16 +100,13 @@ def _cmd_generate(args: argparse.Namespace) -> None:
 
 def _cmd_compare(args: argparse.Namespace) -> None:
     """Run baseline and compressed generation side-by-side."""
-    from mlx_lm import load
-
     from mlx_turboquant.integration.generate_wrapper import (
         generate_baseline,
         generate_with_compressed_cache,
     )
 
     print(f"Loading model: {args.model}...")
-    loaded = load(args.model)
-    model, tokenizer = loaded[0], loaded[1]
+    model, tokenizer = _load_model(args.model)
 
     print("Running baseline...")
     baseline = generate_baseline(
@@ -80,13 +130,11 @@ def _cmd_compare(args: argparse.Namespace) -> None:
 
 def _cmd_info(args: argparse.Namespace) -> None:
     """Show model architecture and memory estimates."""
-    from mlx_lm import load
-
     from mlx_turboquant.cache.memory_accounting import estimate_memory
     from mlx_turboquant.integration.mlx_lm_adapter import introspect_model
 
     print(f"Loading model: {args.model}...")
-    model = load(args.model)[0]
+    model, _tokenizer = _load_model(args.model)
     info = introspect_model(model)
 
     print(f"\nModel: {args.model}")
@@ -113,8 +161,6 @@ def _cmd_info(args: argparse.Namespace) -> None:
 
 def _cmd_bench(args: argparse.Namespace) -> None:
     """Run benchmark suite and generate report."""
-    from mlx_lm import load
-
     from mlx_turboquant.bench.latency import benchmark_latency
     from mlx_turboquant.bench.memory import benchmark_memory
     from mlx_turboquant.bench.prompts import BENCHMARK_PROMPTS, QUICK_PROMPTS
@@ -123,8 +169,7 @@ def _cmd_bench(args: argparse.Namespace) -> None:
     from mlx_turboquant.integration.mlx_lm_adapter import introspect_model
 
     print(f"Loading model: {args.model}...")
-    loaded = load(args.model)
-    model, tokenizer = loaded[0], loaded[1]
+    model, tokenizer = _load_model(args.model)
     info = introspect_model(model)
 
     is_quick = args.suite == "quick"
@@ -182,7 +227,7 @@ def main() -> None:
         "--cache-mode", choices=["compressed", "baseline"], default="compressed",
         help="Cache mode (default: compressed)",
     )
-    gen.add_argument("--kv-bits", type=int, default=3, help="Compression bits (default: 3)")
+    _add_kv_bits_argument(gen, help_text="Compression bits (choices: 2, 3, 4; default: 3)")
     gen.add_argument("--max-tokens", type=int, default=256, help="Max tokens to generate")
     gen.add_argument("--temp", type=float, default=0.0, help="Sampling temperature")
     gen.set_defaults(func=_cmd_generate)
@@ -191,7 +236,7 @@ def main() -> None:
     cmp = subparsers.add_parser("compare", help="Compare baseline vs compressed")
     cmp.add_argument("--model", required=True, help="HuggingFace model path")
     cmp.add_argument("--prompt", required=True, help="Input prompt")
-    cmp.add_argument("--kv-bits", type=int, default=3, help="Compression bits (default: 3)")
+    _add_kv_bits_argument(cmp, help_text="Compression bits (choices: 2, 3, 4; default: 3)")
     cmp.add_argument("--max-tokens", type=int, default=256, help="Max tokens to generate")
     cmp.add_argument("--temp", type=float, default=0.0, help="Sampling temperature")
     cmp.set_defaults(func=_cmd_compare)
@@ -208,7 +253,10 @@ def main() -> None:
         "--suite", choices=["quick", "full"], default="quick",
         help="Benchmark suite (default: quick)",
     )
-    bench.add_argument("--kv-bits", type=int, default=3, help="Compression bits for quick suite")
+    _add_kv_bits_argument(
+        bench,
+        help_text="Compression bits for quick suite (choices: 2, 3, 4; default: 3)",
+    )
     bench.add_argument("--output-dir", default=".", help="Output directory for reports")
     bench.set_defaults(func=_cmd_bench)
 

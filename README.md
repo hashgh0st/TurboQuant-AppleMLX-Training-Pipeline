@@ -48,8 +48,8 @@ At attention time, the process reverses: unpack, dequantize, inverse rotate, res
 ## Getting started
 
 ```bash
-git clone https://github.com/hashgh0st/TurboQuant-AppleMLX-Training-Pipeline.git
-cd TurboQuant-AppleMLX-Training-Pipeline
+git clone https://github.com/dak/mlx-turboquant.git
+cd mlx-turboquant
 uv sync
 ```
 
@@ -73,6 +73,8 @@ mlx-tq info --model mlx-community/Qwen2.5-0.5B-Instruct-4bit
 mlx-tq bench --model mlx-community/Qwen2.5-0.5B-Instruct-4bit --suite quick
 ```
 
+`--kv-bits` is validated at the CLI boundary and currently supports `2`, `3`, or `4`.
+
 ### Python API
 
 ```python
@@ -94,6 +96,11 @@ print(f"Cache: {result.cache_bytes / 1024:.0f} KB")
 
 See [`examples/`](examples/) for more.
 
+## Troubleshooting
+
+- If model loading fails with a "repo not found or access denied" message, verify the model ID and your Hugging Face authentication.
+- Slow CLI smoke tests depend on external model access and may skip automatically when the example model is unavailable.
+
 ## Project structure
 
 ```
@@ -110,7 +117,7 @@ mlx_turboquant/
 
 ```bash
 uv sync --all-extras          # install all deps
-uv run pytest                 # 166 tests
+uv run pytest                 # 171 tests
 uv run ruff check .           # lint
 uv run mypy mlx_turboquant/   # type check (strict)
 ```

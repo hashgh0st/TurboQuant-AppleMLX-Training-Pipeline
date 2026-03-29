@@ -12,6 +12,8 @@ Requires: mlx-community/Qwen2.5-0.5B-Instruct-4bit (downloaded automatically)
 import subprocess
 import sys
 
+from mlx_turboquant.constants import CANONICAL_SAMPLE_MODEL
+
 OUTPUT_DIR = "benchmark_results"
 
 
@@ -19,7 +21,7 @@ def main() -> None:
     cmd = [
         sys.executable, "-m", "mlx_turboquant",
         "bench",
-        "--model", "mlx-community/Qwen2.5-0.5B-Instruct-4bit",
+        "--model", CANONICAL_SAMPLE_MODEL,
         "--suite", "quick",
         "--output-dir", OUTPUT_DIR,
     ]

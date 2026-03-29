@@ -8,12 +8,13 @@ Requires: mlx-community/Qwen2.5-0.5B-Instruct-4bit (downloaded automatically)
 
 from mlx_lm import load
 
+from mlx_turboquant.constants import CANONICAL_SAMPLE_MODEL
 from mlx_turboquant.integration.generate_wrapper import (
     generate_baseline,
     generate_with_compressed_cache,
 )
 
-MODEL = "mlx-community/Qwen2.5-0.5B-Instruct-4bit"
+MODEL = CANONICAL_SAMPLE_MODEL
 PROMPT = "Explain how KV cache compression works in transformer models."
 
 

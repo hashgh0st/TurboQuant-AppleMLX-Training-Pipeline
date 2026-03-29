@@ -604,15 +604,15 @@ def main():
     #   compare   — run baseline and compressed side-by-side
     #   info      — show model info and memory estimates
 
-    # mlx-tq generate --model Qwen/Qwen2.5-0.5B-Instruct-4bit \
+    # mlx-tq generate --model mlx-community/Qwen2.5-0.5B-Instruct-4bit \
     #                  --prompt "Explain quantum computing" \
     #                  --cache-mode compressed --kv-bits 3
 
-    # mlx-tq compare --model Qwen/Qwen2.5-0.5B-Instruct-4bit \
+    # mlx-tq compare --model mlx-community/Qwen2.5-0.5B-Instruct-4bit \
     #                --prompt "Explain quantum computing" \
     #                --kv-bits 3
 
-    # mlx-tq info --model Qwen/Qwen2.5-0.5B-Instruct-4bit
+    # mlx-tq info --model mlx-community/Qwen2.5-0.5B-Instruct-4bit
 ```
 
 ### Tests
@@ -630,10 +630,10 @@ def main():
 - `test_cli_generate_help`: `mlx-tq generate --help` shows usage
 - `test_cli_compare_smoke`: end-to-end comparison on tiny model
 
-**Note**: Integration tests require downloading a model. Mark with `@pytest.mark.slow` and skip in CI unless `MLX_TQ_SLOW_TESTS=1` is set.
+**Note**: Integration tests require downloading a model. They are marked with `@pytest.mark.slow`, and the CLI smoke coverage should skip automatically when external model access or Hugging Face authentication is unavailable.
 
 ### Exit Criteria
-- [x] `mlx-tq generate --model Qwen/Qwen2.5-0.5B-Instruct-4bit --prompt "Hello" --cache-mode compressed --kv-bits 3` produces coherent text
+- [x] `mlx-tq generate --model mlx-community/Qwen2.5-0.5B-Instruct-4bit --prompt "Hello" --cache-mode compressed --kv-bits 3` produces coherent text
 - [x] `mlx-tq compare` shows side-by-side baseline vs compressed output with metrics
 - [x] `mlx-tq info` displays model architecture and memory estimates
 - [x] No modifications to MLX-LM source code — pure wrapper/adapter pattern
@@ -647,6 +647,11 @@ def main():
 - Separated ModelInfo from CacheConfig (introspect_model no longer returns CacheConfig with hardcoded kv_bits)
 - Extracted _print_result CLI helper to eliminate 3x copy-paste
 - Added zero-guard on compression ratio division
+- Standardized docs, tests, and examples on the `mlx-community/Qwen2.5-*` model IDs
+- Corrected README onboarding to clone this repository instead of an unrelated project
+- Added CLI validation for `--kv-bits` so unsupported values fail at argument parsing
+- Added concise user-facing model load errors for repo/auth/network failures
+- Hardened the slow CLI smoke test to skip on external model-access failures instead of failing the suite
 
 ---
 
@@ -783,8 +788,8 @@ def generate_report(
 ### CLI Extension
 
 ```bash
-mlx-tq bench --model Qwen/Qwen2.5-3B-Instruct-4bit --suite full
-mlx-tq bench --model Qwen/Qwen2.5-0.5B-Instruct-4bit --suite quick
+mlx-tq bench --model mlx-community/Qwen2.5-3B-Instruct-4bit --suite full
+mlx-tq bench --model mlx-community/Qwen2.5-0.5B-Instruct-4bit --suite quick
 ```
 
 ### Tests
@@ -976,7 +981,7 @@ uv sync
 
 # Generate with compressed cache
 mlx-tq generate \
-  --model Qwen/Qwen2.5-0.5B-Instruct-4bit \
+  --model mlx-community/Qwen2.5-0.5B-Instruct-4bit \
   --prompt "Explain KV cache compression in transformers" \
   --cache-mode compressed \
   --kv-bits 3 \
@@ -984,7 +989,7 @@ mlx-tq generate \
 
 # Compare baseline vs compressed
 mlx-tq compare \
-  --model Qwen/Qwen2.5-0.5B-Instruct-4bit \
+  --model mlx-community/Qwen2.5-0.5B-Instruct-4bit \
   --prompt "What is the meaning of life?" \
   --kv-bits 3
 ```
@@ -992,10 +997,10 @@ mlx-tq compare \
 ### Full Benchmark Suite (after Phase 4)
 ```bash
 # Quick suite (< 5 min on M4 Mini 16GB)
-mlx-tq bench --model Qwen/Qwen2.5-0.5B-Instruct-4bit --suite quick
+mlx-tq bench --model mlx-community/Qwen2.5-0.5B-Instruct-4bit --suite quick
 
 # Full suite with larger model
-mlx-tq bench --model Qwen/Qwen2.5-3B-Instruct-4bit --suite full
+mlx-tq bench --model mlx-community/Qwen2.5-3B-Instruct-4bit --suite full
 ```
 
 ### Metal Kernel Validation (after Phase 5)
@@ -1004,7 +1009,7 @@ mlx-tq bench --model Qwen/Qwen2.5-3B-Instruct-4bit --suite full
 pytest tests/test_metal_kernels.py tests/test_backend_parity.py -v
 
 # Performance comparison
-mlx-tq bench --model Qwen/Qwen2.5-3B-Instruct-4bit --backend metal --suite quick
+mlx-tq bench --model mlx-community/Qwen2.5-3B-Instruct-4bit --backend metal --suite quick
 ```
 
 ### CI Pipeline

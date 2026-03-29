@@ -33,5 +33,7 @@ uv run pytest               # tests
 Integration tests that require model downloads are marked with `@pytest.mark.slow`:
 
 ```bash
-MLX_TQ_SLOW_TESTS=1 uv run pytest -m slow
+uv run pytest -m slow
 ```
+
+These tests depend on external model availability and Hugging Face access. The CLI smoke test will skip automatically when the example model cannot be reached or authenticated.
