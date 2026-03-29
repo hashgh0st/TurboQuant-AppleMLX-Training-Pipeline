@@ -2,9 +2,9 @@
 
 ## Project Overview
 
-Apple-Silicon KV-cache compression for MLX/MLX-LM, inspired by TurboQuant research. Stage-1-only prototype targeting Qwen 2.5/3 models on M4 Mini 16 GB.
+Apple-Silicon KV-cache compression for MLX/MLX-LM targeting Qwen 2.5/3 models on M4 Mini 16 GB.
 
-**Current status:** v0.2.0 released. All phases complete (0-10).
+**Current status:** Pivoting from TurboQuant rotation approach to per-channel quantization. The rotation + Lloyd-Max approach (Stages 1 & 2) produces unusable output at 2-4 bits on real models due to per-element error scaling with vector norm. See `docs/ROTATION_APPROACH_POSTMORTEM.md` for full analysis. Infrastructure (cache protocol, sinks, incremental decode, Metal kernels, benchmarks, promotion gates) transfers to the new approach.
 
 ## Tech Stack
 
@@ -86,3 +86,4 @@ mlx_turboquant/
 - `docs/RESEARCHv2.md` — Research brief
 - `docs/TDDv2.md` — Technical design
 - `docs/IMPLEMENTATION_PLAN.md` — Phased build plan (Phases 0-10 complete)
+- `docs/ROTATION_APPROACH_POSTMORTEM.md` — Why the rotation approach fails at 2-4 bits on real models

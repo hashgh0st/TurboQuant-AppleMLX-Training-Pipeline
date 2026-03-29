@@ -73,3 +73,39 @@ def unpack(packed: mx.array, bits: int, head_dim: int) -> mx.array:
     # Reshape to (..., num_words * vpw) and truncate to head_dim
     flat = extracted.reshape(*batch_shape, num_words * vpw)
     return flat[..., :head_dim]
+
+
+# --- 1-bit sign packing for QJL ---
+
+SIGNS_PER_WORD = 32  # 1 bit x 32 per uint32
+
+
+def signs_packed_dim(head_dim: int) -> int:
+    """Number of uint32 values needed to pack head_dim sign bits."""
+    return math.ceil(head_dim / SIGNS_PER_WORD)
+
+
+def pack_signs(signs: mx.array) -> mx.array:
+    """Pack (..., head_dim) uint8 {0,1} sign bits into (..., packed_dim) uint32."""
+    *batch_shape, head_dim_val = signs.shape
+    padded_dim = SIGNS_PER_WORD * math.ceil(head_dim_val / SIGNS_PER_WORD)
+
+    if padded_dim > head_dim_val:
+        pad_width = padded_dim - head_dim_val
+        signs = mx.pad(signs, [(0, 0)] * len(batch_shape) + [(0, pad_width)])
+
+    num_words = padded_dim // SIGNS_PER_WORD
+    grouped = signs.reshape(*batch_shape, num_words, SIGNS_PER_WORD).astype(mx.uint32)
+    shifts = mx.arange(SIGNS_PER_WORD, dtype=mx.uint32)
+    return mx.sum(mx.left_shift(grouped, shifts), axis=-1)
+
+
+def unpack_signs(packed: mx.array, head_dim: int) -> mx.array:
+    """Unpack (..., packed_dim) uint32 to (..., head_dim) float32 signs in {-1, +1}."""
+    *batch_shape, num_words = packed.shape
+    shifts = mx.arange(SIGNS_PER_WORD, dtype=mx.uint32)
+    expanded = mx.expand_dims(packed, axis=-1)
+    bits = mx.bitwise_and(mx.right_shift(expanded, shifts), mx.array(1, dtype=mx.uint32))
+    flat = bits.reshape(*batch_shape, num_words * SIGNS_PER_WORD)
+    # Map {0, 1} → {-1, +1}
+    return (2.0 * flat[..., :head_dim].astype(mx.float32) - 1.0)

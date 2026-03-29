@@ -1,20 +1,22 @@
 # mlx-turboquant
 
-Apple-Silicon KV-cache compression for MLX/MLX-LM, inspired by the [TurboQuant](https://research.google/blog/turboquant-redefining-ai-efficiency-with-extreme-compression/) research direction.
+Apple-Silicon KV-cache compression for MLX/MLX-LM, targeting Qwen 2.5/3 models on M4 Mini 16 GB.
 
 ## What is this?
 
-`mlx-turboquant` compresses the KV cache during LLM inference on Apple Silicon, reducing memory pressure and enabling longer context windows. It uses randomized Hadamard rotation with Lloyd-Max optimal codebooks to achieve near-Shannon-limit compression at 2-4 bits per coordinate.
+`mlx-turboquant` compresses the KV cache during LLM inference on Apple Silicon, reducing memory pressure and enabling longer context windows.
 
-This is a **stage-1 prototype** — not a full reproduction of Google's two-stage TurboQuant system.
+**Status: pivoting quantization approach.** The original TurboQuant-inspired rotation + Lloyd-Max codec (Stages 1 & 2) does not produce usable output at 2-4 bits on real models. Testing on Qwen2.5-7B showed that per-element quantization error scales with vector norm, destroying attention logit differences. See [`docs/ROTATION_APPROACH_POSTMORTEM.md`](docs/ROTATION_APPROACH_POSTMORTEM.md) for the full analysis. The project is pivoting to per-channel group quantization (KIVI-style), which preserves per-element scale.
 
-## Memory Geometry (Qwen 2.5-0.5B)
+The infrastructure (duck-type KVCache protocol, attention sinks, incremental decode, Metal kernels, benchmark suite, promotion gates) carries forward.
+
+## Memory Geometry (Qwen 2.5-0.5B, rotation codec)
 
 | Metric | Baseline | 3-bit Compressed |
 |--------|----------|-----------------|
 | Occupied cache at 4K tokens | 48.0 MB | 11.2 MB (**4.3x**) |
 
-Compressed generation is currently experimental. On the canonical sample model, recent quick benchmarks showed substantial quality loss and roughly 35-40% decode slowdown versus baseline, so benchmark it on your actual model and prompts before relying on it.
+Note: memory savings are real but the rotation codec's output quality is not usable. The per-channel codec (in development) will deliver both compression and quality.
 
 ## How it works
 

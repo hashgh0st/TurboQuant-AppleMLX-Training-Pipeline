@@ -106,6 +106,7 @@ def generate_with_compressed_cache(
     sink_tokens: int = 0,
     model_name: str | None = None,
     calibrated_dir: Path | None = None,
+    use_qjl: bool = False,
 ) -> GenerationResult:
     """Generate text using compressed KV cache.
 
@@ -128,6 +129,7 @@ def generate_with_compressed_cache(
         sink_tokens=sink_tokens,
         model_name=model_name,
         calibrated_dir=calibrated_dir,
+        use_qjl=use_qjl,
     )
 
     return _run_generation(

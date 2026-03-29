@@ -121,6 +121,15 @@ def _add_calibrated_dir_argument(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_qjl_argument(parser: argparse.ArgumentParser) -> None:
+    """Add QJL (Stage 2) flag for unbiased inner product estimation."""
+    parser.add_argument(
+        "--qjl",
+        action="store_true",
+        help="Enable QJL residual correction (Stage 2) for unbiased attention scores.",
+    )
+
+
 def _cmd_generate(args: argparse.Namespace) -> None:
     """Generate text with baseline or compressed KV cache."""
     from mlx_turboquant.integration.generate_wrapper import (
@@ -145,6 +154,7 @@ def _cmd_generate(args: argparse.Namespace) -> None:
             sink_tokens=args.sink_tokens,
             model_name=args.model,
             calibrated_dir=cal_dir,
+            use_qjl=args.qjl,
         )
     else:
         result = generate_baseline(
@@ -199,6 +209,7 @@ def _cmd_compare(args: argparse.Namespace) -> None:
         sink_tokens=args.sink_tokens,
         model_name=args.model,
         calibrated_dir=cal_dir,
+        use_qjl=args.qjl,
     )
 
     _print_result(baseline, header="BASELINE")
@@ -400,6 +411,7 @@ def main() -> None:
     _add_backend_argument(gen)
     _add_sink_tokens_argument(gen)
     _add_calibrated_dir_argument(gen)
+    _add_qjl_argument(gen)
     gen.add_argument("--max-tokens", type=int, default=256, help="Max tokens to generate")
     gen.add_argument("--temp", type=float, default=0.0, help="Sampling temperature")
     gen.set_defaults(func=_cmd_generate)
@@ -413,6 +425,7 @@ def main() -> None:
     _add_backend_argument(cmp)
     _add_sink_tokens_argument(cmp)
     _add_calibrated_dir_argument(cmp)
+    _add_qjl_argument(cmp)
     cmp.add_argument("--max-tokens", type=int, default=256, help="Max tokens to generate")
     cmp.add_argument("--temp", type=float, default=0.0, help="Sampling temperature")
     cmp.set_defaults(func=_cmd_compare)

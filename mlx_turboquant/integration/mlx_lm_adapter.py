@@ -52,6 +52,7 @@ def make_compressed_cache(
     sink_tokens: int = 0,
     model_name: str | None = None,
     calibrated_dir: Path | None = None,
+    use_qjl: bool = False,
 ) -> list[CompressedKVCache]:
     """Create compressed cache layers for a loaded MLX-LM model.
 
@@ -74,5 +75,6 @@ def make_compressed_cache(
         sink_tokens=sink_tokens,
         model_name=model_name,
         calibrated_dir=calibrated_dir,
+        use_qjl=use_qjl,
     )
     return create_cache_layers(config)

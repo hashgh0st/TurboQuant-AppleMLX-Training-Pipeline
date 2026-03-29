@@ -27,6 +27,7 @@ class CacheConfig:
     sink_tokens: int = 0
     model_name: str | None = None
     calibrated_dir: Path | None = None
+    use_qjl: bool = False
 
 
 def create_cache_layers(config: CacheConfig) -> list[CompressedKVCache]:
@@ -38,6 +39,7 @@ def create_cache_layers(config: CacheConfig) -> list[CompressedKVCache]:
         model_name=config.model_name,
         kv_type="key",
         calibrated_dir=config.calibrated_dir,
+        use_qjl=config.use_qjl,
     )
     value_bits = config.kv_bits if config.value_kv_bits is None else config.value_kv_bits
     value_codec_config = CodecConfig(
@@ -47,10 +49,13 @@ def create_cache_layers(config: CacheConfig) -> list[CompressedKVCache]:
         model_name=config.model_name,
         kv_type="value",
         calibrated_dir=config.calibrated_dir,
+        # QJL for keys only — values don't need unbiased inner products
     )
     key_codec = Stage1Codec(key_codec_config)
     # Separate codecs when bits differ OR when calibrated (different kv_type codebooks)
-    share_codec = value_bits == config.kv_bits and config.model_name is None
+    share_codec = (
+        value_bits == config.kv_bits and config.model_name is None and not config.use_qjl
+    )
     value_codec = key_codec if share_codec else Stage1Codec(value_codec_config)
     use_metal = config.backend == "metal"
     return [

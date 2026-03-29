@@ -16,7 +16,7 @@ from typing import Any
 
 import mlx.core as mx
 
-from mlx_turboquant.codec.packbits import packed_dim
+from mlx_turboquant.codec.packbits import packed_dim, signs_packed_dim
 from mlx_turboquant.codec.stage1_codec import CompressedTensor, Stage1Codec
 
 
@@ -55,16 +55,21 @@ class CompressedKVCache:
         self._key_norms: mx.array | None = None
         self._packed_values: mx.array | None = None
         self._value_norms: mx.array | None = None
-        # Incremental decode cache: previously decoded output persists between
-        # steps so that autoregressive decode is O(1) instead of O(seq_len).
+        # QJL fields (keys only — values don't need unbiased inner products)
+        self._qjl_packed_keys: mx.array | None = None
+        self._key_residual_norms: mx.array | None = None
+        self._use_qjl = self.key_codec.config.use_qjl
+        # Incremental decode cache
         self._decoded_keys: mx.array | None = None
         self._decoded_values: mx.array | None = None
         if self.key_codec.config.head_dim != self.value_codec.config.head_dim:
             raise ValueError("key and value codecs must share head_dim")
-        self._key_pdim = packed_dim(self.key_codec.config.head_dim, self.key_codec.config.bits)
+        # Use mse_bits for packed_dim (bits-1 when QJL is on)
+        self._key_pdim = packed_dim(self.key_codec.config.head_dim, self.key_codec.mse_bits)
         self._value_pdim = packed_dim(
-            self.value_codec.config.head_dim, self.value_codec.config.bits
+            self.value_codec.config.head_dim, self.value_codec.mse_bits
         )
+        self._key_qjl_pdim = signs_packed_dim(self.key_codec.config.head_dim)
 
     def update_and_fetch(self, keys: mx.array, values: mx.array) -> tuple[mx.array, mx.array]:
         """Compress new KV, append to storage, return all decompressed KV.
@@ -115,7 +120,6 @@ class CompressedKVCache:
             pv = ct_v.packed.reshape(B, n_kv_heads, compress_steps, self._value_pdim)
             vn = ct_v.norms.reshape(B, n_kv_heads, compress_steps)
 
-            # Allocate or grow compressed storage
             new_compressed_end = compressed_prev + compress_steps
             if self._packed_keys is None or new_compressed_end > self._packed_keys.shape[2]:
                 n_alloc = ((self.step + compress_steps - 1) // self.step) * self.step
@@ -144,6 +148,30 @@ class CompressedKVCache:
                     self._packed_values = new_pv
                     self._value_norms = new_vn
 
+                # QJL storage for keys
+                if self._use_qjl:
+                    new_qjl = mx.zeros(
+                        (B, n_kv_heads, n_alloc, self._key_qjl_pdim), dtype=mx.uint32
+                    )
+                    new_krn = mx.zeros((B, n_kv_heads, n_alloc), dtype=mx.float16)
+                    if self._qjl_packed_keys is not None:
+                        if compressed_prev % self.step != 0:
+                            self._qjl_packed_keys = self._qjl_packed_keys[
+                                :, :, :compressed_prev, :
+                            ]
+                            self._key_residual_norms = self._key_residual_norms[  # type: ignore[index]
+                                :, :, :compressed_prev
+                            ]
+                        self._qjl_packed_keys = mx.concatenate(
+                            [self._qjl_packed_keys, new_qjl], axis=2
+                        )
+                        self._key_residual_norms = mx.concatenate(
+                            [self._key_residual_norms, new_krn], axis=2  # type: ignore[list-item]
+                        )
+                    else:
+                        self._qjl_packed_keys = new_qjl
+                        self._key_residual_norms = new_krn
+
             assert self._packed_keys is not None
             assert self._key_norms is not None
             assert self._packed_values is not None
@@ -152,6 +180,16 @@ class CompressedKVCache:
             self._key_norms[:, :, compressed_prev:new_compressed_end] = kn
             self._packed_values[:, :, compressed_prev:new_compressed_end, :] = pv
             self._value_norms[:, :, compressed_prev:new_compressed_end] = vn
+
+            if self._use_qjl and ct_k.qjl_packed is not None:
+                qjl_pk = ct_k.qjl_packed.reshape(
+                    B, n_kv_heads, compress_steps, self._key_qjl_pdim
+                )
+                krn = ct_k.residual_norms.reshape(B, n_kv_heads, compress_steps)  # type: ignore[union-attr]
+                assert self._qjl_packed_keys is not None
+                assert self._key_residual_norms is not None
+                self._qjl_packed_keys[:, :, compressed_prev:new_compressed_end, :] = qjl_pk
+                self._key_residual_norms[:, :, compressed_prev:new_compressed_end] = krn
 
         self.offset += num_steps
         return self._decode_incremental(
@@ -237,7 +275,19 @@ class CompressedKVCache:
         )
         vn_flat = self._value_norms[:, :, start:end].reshape(B * n_kv_heads, n)
 
-        ct_k = CompressedTensor(packed=pk_flat, norms=kn_flat, config=self.key_codec.config)
+        qjl_flat = None
+        krn_flat = None
+        if self._use_qjl and self._qjl_packed_keys is not None:
+            qjl_flat = self._qjl_packed_keys[:, :, start:end, :].reshape(
+                B * n_kv_heads, n, self._key_qjl_pdim
+            )
+            assert self._key_residual_norms is not None
+            krn_flat = self._key_residual_norms[:, :, start:end].reshape(B * n_kv_heads, n)
+
+        ct_k = CompressedTensor(
+            packed=pk_flat, norms=kn_flat, config=self.key_codec.config,
+            qjl_packed=qjl_flat, residual_norms=krn_flat,
+        )
         ct_v = CompressedTensor(packed=pv_flat, norms=vn_flat, config=self.value_codec.config)
 
         keys_dec = self.key_codec.decode(ct_k, use_metal=self.use_metal).reshape(
@@ -311,6 +361,8 @@ class CompressedKVCache:
         self._key_norms = None
         self._packed_values = None
         self._value_norms = None
+        self._qjl_packed_keys = None
+        self._key_residual_norms = None
         self._decoded_keys = None
         self._decoded_values = None
 
