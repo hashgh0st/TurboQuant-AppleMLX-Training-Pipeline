@@ -14,10 +14,11 @@ The decode pipeline reverses this: unpack → dequantize → inverse rotate → 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 import mlx.core as mx
 
-from mlx_turboquant.codec.codebooks import load_codebook
+from mlx_turboquant.codec.codebooks import KVType, load_codebook_with_fallback
 from mlx_turboquant.codec.packbits import pack, unpack
 from mlx_turboquant.codec.transforms import (
     TransformState,
@@ -35,6 +36,9 @@ class CodecConfig:
     head_dim: int
     bits: int
     seed: int = 42
+    model_name: str | None = None
+    kv_type: KVType = "key"
+    calibrated_dir: Path | None = None
 
 
 @dataclass
@@ -55,7 +59,13 @@ class Stage1Codec:
 
     def __init__(self, config: CodecConfig) -> None:
         self.config = config
-        cb = load_codebook(config.head_dim, config.bits)
+        cb = load_codebook_with_fallback(
+            config.head_dim,
+            config.bits,
+            kv_type=config.kv_type,
+            model_name=config.model_name,
+            calibrated_dir=config.calibrated_dir,
+        )
         self.centroids = mx.array(cb.centroids, dtype=mx.float32)
         self.boundaries = mx.array(cb.boundaries, dtype=mx.float32)
         self.transform: TransformState = create_transform(config.head_dim, config.seed)

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import mlx.core as mx
@@ -103,13 +104,13 @@ def generate_with_compressed_cache(
     temp: float = 0.0,
     seed: int = 42,
     sink_tokens: int = 0,
+    model_name: str | None = None,
+    calibrated_dir: Path | None = None,
 ) -> GenerationResult:
     """Generate text using compressed KV cache.
 
     Creates a CompressedKVCache and passes it as prompt_cache to generate_step
     with kv_bits=None to disable MLX-LM's built-in affine quantization.
-
-    When ``sink_tokens > 0``, the first tokens are kept in uncompressed FP16.
     """
     profile = CompressionProfile(
         kv_bits,
@@ -125,6 +126,8 @@ def generate_with_compressed_cache(
         backend=profile.backend,
         seed=profile.seed,
         sink_tokens=sink_tokens,
+        model_name=model_name,
+        calibrated_dir=calibrated_dir,
     )
 
     return _run_generation(

@@ -165,6 +165,7 @@ def test_compare_uses_logical_cache_bytes_for_headline(
             value_kv_bits=None,
             backend="reference",
             sink_tokens=0,
+            calibrated_dir=None,
             max_tokens=2,
             temp=0.0,
         )

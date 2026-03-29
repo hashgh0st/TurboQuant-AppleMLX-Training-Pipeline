@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from pathlib import Path
 from typing import Any
 
 from mlx_turboquant.constants import SUPPORTED_KV_BITS
@@ -111,6 +112,15 @@ def _add_sink_tokens_argument(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_calibrated_dir_argument(parser: argparse.ArgumentParser) -> None:
+    """Add calibrated codebook directory for model-specific codebooks."""
+    parser.add_argument(
+        "--calibrated-dir",
+        default=None,
+        help="Directory containing calibrated codebooks (from mlx-tq calibrate).",
+    )
+
+
 def _cmd_generate(args: argparse.Namespace) -> None:
     """Generate text with baseline or compressed KV cache."""
     from mlx_turboquant.integration.generate_wrapper import (
@@ -122,6 +132,7 @@ def _cmd_generate(args: argparse.Namespace) -> None:
     model, tokenizer = _load_model(args.model)
 
     if args.cache_mode == "compressed":
+        cal_dir = Path(args.calibrated_dir) if args.calibrated_dir else None
         result = generate_with_compressed_cache(
             model,
             tokenizer,
@@ -132,6 +143,8 @@ def _cmd_generate(args: argparse.Namespace) -> None:
             max_tokens=args.max_tokens,
             temp=args.temp,
             sink_tokens=args.sink_tokens,
+            model_name=args.model,
+            calibrated_dir=cal_dir,
         )
     else:
         result = generate_baseline(
@@ -173,6 +186,7 @@ def _cmd_compare(args: argparse.Namespace) -> None:
         )
     )
     print(f"Running compressed ({compressed_label})...")
+    cal_dir = Path(args.calibrated_dir) if args.calibrated_dir else None
     compressed = generate_with_compressed_cache(
         model,
         tokenizer,
@@ -183,6 +197,8 @@ def _cmd_compare(args: argparse.Namespace) -> None:
         max_tokens=args.max_tokens,
         temp=args.temp,
         sink_tokens=args.sink_tokens,
+        model_name=args.model,
+        calibrated_dir=cal_dir,
     )
 
     _print_result(baseline, header="BASELINE")
@@ -241,6 +257,41 @@ def _cmd_info(args: argparse.Namespace) -> None:
             f"(baseline: {report.baseline_bytes / 1024 / 1024:.1f} MB, "
             f"{report.compression_ratio:.1f}x)"
         )
+
+
+def _cmd_calibrate(args: argparse.Namespace) -> None:
+    """Calibrate codebooks for a specific model."""
+    from mlx_turboquant.codec.calibrate import CalibrationConfig, calibrate_codebooks
+    from mlx_turboquant.codec.codebooks import (
+        calibrated_codebook_dir,
+        save_codebook,
+        verify_codebook,
+    )
+    from mlx_turboquant.integration.mlx_lm_adapter import introspect_model
+
+    print(f"Loading model: {args.model}...")
+    model, tokenizer = _load_model(args.model)
+    info = introspect_model(model)
+
+    config = CalibrationConfig(
+        head_dim=info.head_dim,
+        bits_list=tuple(args.bits),
+        seed=42,
+        max_tokens=args.max_tokens,
+    )
+
+    print(f"Collecting KV samples (head_dim={info.head_dim})...")
+    codebooks = calibrate_codebooks(model, tokenizer, config)
+
+    out_dir = Path(args.output_dir) if args.output_dir else calibrated_codebook_dir(args.model)
+    print(f"Saving {len(codebooks)} codebooks to {out_dir}...")
+    for name, cb in codebooks.items():
+        path = out_dir / f"{name}.json"
+        save_codebook(cb, path)
+        ok = verify_codebook(cb, symmetric=False)
+        print(f"  {name}: distortion={cb.distortion:.6f}, verified={ok}")
+
+    print("Calibration complete.")
 
 
 def _cmd_bench(args: argparse.Namespace) -> None:
@@ -343,6 +394,7 @@ def main() -> None:
     _add_value_kv_bits_argument(gen)
     _add_backend_argument(gen)
     _add_sink_tokens_argument(gen)
+    _add_calibrated_dir_argument(gen)
     gen.add_argument("--max-tokens", type=int, default=256, help="Max tokens to generate")
     gen.add_argument("--temp", type=float, default=0.0, help="Sampling temperature")
     gen.set_defaults(func=_cmd_generate)
@@ -355,9 +407,24 @@ def main() -> None:
     _add_value_kv_bits_argument(cmp)
     _add_backend_argument(cmp)
     _add_sink_tokens_argument(cmp)
+    _add_calibrated_dir_argument(cmp)
     cmp.add_argument("--max-tokens", type=int, default=256, help="Max tokens to generate")
     cmp.add_argument("--temp", type=float, default=0.0, help="Sampling temperature")
     cmp.set_defaults(func=_cmd_compare)
+
+    # calibrate
+    cal = subparsers.add_parser("calibrate", help="Calibrate codebooks for a model")
+    cal.add_argument("--model", required=True, help="HuggingFace model path")
+    cal.add_argument(
+        "--bits",
+        type=int,
+        nargs="+",
+        default=[2, 3, 4],
+        help="Bit widths to calibrate (default: 2 3 4)",
+    )
+    cal.add_argument("--max-tokens", type=int, default=256, help="Max tokens per prompt")
+    cal.add_argument("--output-dir", default=None, help="Override output directory")
+    cal.set_defaults(func=_cmd_calibrate)
 
     # info
     info = subparsers.add_parser("info", help="Show model info and memory estimates")

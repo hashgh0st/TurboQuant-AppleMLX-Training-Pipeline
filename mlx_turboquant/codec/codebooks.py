@@ -11,8 +11,11 @@ import json
 import math
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import Literal
 
 import numpy as np
+
+KVType = Literal["key", "value"]
 
 # Directory containing precomputed codebook JSON files
 _DATA_DIR = Path(__file__).parent / "data"
@@ -133,8 +136,12 @@ def load_codebook(dim: int, bits: int) -> CodebookData:
     return CodebookData(**data)
 
 
-def verify_codebook(cb: CodebookData) -> bool:
-    """Verify codebook integrity: monotonicity, symmetry, coverage, level count."""
+def verify_codebook(cb: CodebookData, *, symmetric: bool = True) -> bool:
+    """Verify codebook integrity: monotonicity, coverage, level count, and symmetry.
+
+    Set ``symmetric=False`` for empirically calibrated codebooks, which may
+    be asymmetric due to model-specific activation patterns (e.g. RoPE'd keys).
+    """
     c = cb.centroids
     b = cb.boundaries
     expected_levels = 1 << cb.bits
@@ -155,13 +162,66 @@ def verify_codebook(cb: CodebookData) -> bool:
         return False
 
     # Symmetry: centroids[i] ≈ -centroids[n-1-i] for symmetric Beta
-    n = len(c)
-    return all(abs(c[i] + c[n - 1 - i]) <= 1e-4 for i in range(n // 2))
+    if symmetric:
+        n = len(c)
+        if not all(abs(c[i] + c[n - 1 - i]) <= 1e-4 for i in range(n // 2)):
+            return False
+
+    return True
 
 
 # Supported configurations: {dim} x {bits}
 SUPPORTED_DIMS = (64, 128)
 SUPPORTED_BITS = (2, 3, 4)
+
+# Default directory for model-specific calibrated codebooks
+_DEFAULT_CALIBRATED_DIR = Path.home() / ".cache" / "mlx-turboquant" / "calibrated"
+
+
+def _model_slug(model_name: str) -> str:
+    """Convert model name to filesystem-safe slug."""
+    return model_name.replace("/", "__").replace("\\", "__")
+
+
+def calibrated_codebook_dir(model_name: str, base_dir: Path | None = None) -> Path:
+    """Return the directory for a model's calibrated codebooks."""
+    base = base_dir or _DEFAULT_CALIBRATED_DIR
+    return base / _model_slug(model_name)
+
+
+def load_calibrated_codebook(
+    dim: int,
+    bits: int,
+    kv_type: KVType,
+    model_name: str,
+    base_dir: Path | None = None,
+) -> CodebookData | None:
+    """Load a calibrated codebook if available, return None otherwise."""
+    dir_path = calibrated_codebook_dir(model_name, base_dir)
+    path = dir_path / f"{dim}_{bits}_{kv_type}.json"
+    if not path.exists():
+        return None
+    with open(path) as f:
+        data = json.load(f)
+    return CodebookData(**data)
+
+
+def load_codebook_with_fallback(
+    dim: int,
+    bits: int,
+    kv_type: KVType = "key",
+    model_name: str | None = None,
+    calibrated_dir: Path | None = None,
+) -> CodebookData:
+    """Load calibrated codebook if available, else fall back to precomputed.
+
+    When ``model_name`` is None, always returns the precomputed (theoretical) codebook.
+    """
+    if model_name is not None:
+        calibrated = load_calibrated_codebook(dim, bits, kv_type, model_name, calibrated_dir)
+        if calibrated is not None:
+            return calibrated
+    return load_codebook(dim, bits)
 
 
 if __name__ == "__main__":

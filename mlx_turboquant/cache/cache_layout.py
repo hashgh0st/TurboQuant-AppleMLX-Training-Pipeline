@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal
 
 from mlx_turboquant.cache.compressed_cache import CompressedKVCache
@@ -24,6 +25,8 @@ class CacheConfig:
     seed: int = 42
     backend: BackendKind = "reference"
     sink_tokens: int = 0
+    model_name: str | None = None
+    calibrated_dir: Path | None = None
 
 
 def create_cache_layers(config: CacheConfig) -> list[CompressedKVCache]:
@@ -32,15 +35,23 @@ def create_cache_layers(config: CacheConfig) -> list[CompressedKVCache]:
         head_dim=config.head_dim,
         bits=config.kv_bits,
         seed=config.seed,
+        model_name=config.model_name,
+        kv_type="key",
+        calibrated_dir=config.calibrated_dir,
     )
     value_bits = config.kv_bits if config.value_kv_bits is None else config.value_kv_bits
     value_codec_config = CodecConfig(
         head_dim=config.head_dim,
         bits=value_bits,
         seed=config.seed,
+        model_name=config.model_name,
+        kv_type="value",
+        calibrated_dir=config.calibrated_dir,
     )
     key_codec = Stage1Codec(key_codec_config)
-    value_codec = key_codec if value_bits == config.kv_bits else Stage1Codec(value_codec_config)
+    # Separate codecs when bits differ OR when calibrated (different kv_type codebooks)
+    share_codec = value_bits == config.kv_bits and config.model_name is None
+    value_codec = key_codec if share_codec else Stage1Codec(value_codec_config)
     use_metal = config.backend == "metal"
     return [
         CompressedKVCache(

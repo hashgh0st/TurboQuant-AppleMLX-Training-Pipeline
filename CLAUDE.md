@@ -37,6 +37,10 @@ Apple-Silicon KV-cache compression for MLX/MLX-LM, inspired by TurboQuant resear
 
 11. **Use `resolve_profiles()` for profile resolution.** The helper in `integration/compression_profile.py` eliminates boilerplate across bench modules. Profiles are labeled "research candidates", not "recommended" — promotion requires passing `--gate` thresholds.
 
+12. **Calibrated codebooks override precomputed ones via `load_codebook_with_fallback()`.** When `model_name` is set in `CodecConfig`, the codec checks `~/.cache/mlx-turboquant/calibrated/{model_slug}/` for model-specific codebooks before falling back to the theoretical Beta(d/2, d/2) codebooks. Separate codebooks for keys and values (`KVType = Literal["key", "value"]`) because RoPE distorts the key distribution differently. Run `mlx-tq calibrate --model <path>` to generate them.
+
+13. **`codec/calibrate.py` owns calibration logic.** `build_empirical_codebook()` fits sample-based Lloyd-Max with early convergence termination. `KVCollectorCache` wraps a real KVCache to intercept raw K/V tensors. `collect_kv_samples()` batches normalize+rotate via `_rotate_and_flatten()` for efficient GPU dispatch. Don't duplicate the normalize+rotate pattern from `stage1_codec.py:encode()`.
+
 ## Key MLX APIs
 
 - `mx.hadamard_transform(a, scale=None)` — native WHT, works for dim = m * 2^k (covers head_dim 64 and 128)
@@ -61,14 +65,14 @@ uv run mypy mlx_turboquant/      # type check
 - Type annotations on all public functions (mypy strict mode)
 - Tests in `tests/` mirroring source structure
 - Slow tests (model downloads) marked with `@pytest.mark.slow`
-- Codebook data stored as JSON in `mlx_turboquant/codec/data/`
+- Codebook data stored as JSON in `mlx_turboquant/codec/data/` (precomputed) and `~/.cache/mlx-turboquant/calibrated/` (model-specific)
 - Version sourced from `importlib.metadata` (single source of truth in pyproject.toml)
 
 ## Package Structure
 
 ```
 mlx_turboquant/
-├── codec/       # codebooks, transforms, packbits, stage1_codec
+├── codec/       # codebooks, transforms, packbits, stage1_codec, calibrate
 ├── cache/       # compressed_cache, cache_layout, memory_accounting
 ├── integration/ # mlx_lm_adapter, generate_wrapper
 ├── kernels/     # metal_pack, metal_attention (Phase 5)

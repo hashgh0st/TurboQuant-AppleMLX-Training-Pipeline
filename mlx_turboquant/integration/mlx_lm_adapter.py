@@ -7,6 +7,7 @@ architecture parameters, then creates CompressedKVCache layers.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from mlx_turboquant.cache.cache_layout import CacheConfig, create_cache_layers
@@ -49,14 +50,16 @@ def make_compressed_cache(
     backend: CompressionBackend = "reference",
     seed: int = 42,
     sink_tokens: int = 0,
+    model_name: str | None = None,
+    calibrated_dir: Path | None = None,
 ) -> list[CompressedKVCache]:
     """Create compressed cache layers for a loaded MLX-LM model.
 
     Analogous to mlx_lm.models.cache.make_prompt_cache() but returns
     CompressedKVCache instances instead of KVCache.
 
-    When ``sink_tokens > 0``, the first tokens are kept in uncompressed
-    FP16 (attention sink) for quality preservation at long context.
+    When ``model_name`` is provided and calibrated codebooks exist for that model,
+    they are used instead of the precomputed theoretical codebooks.
     """
     info = introspect_model(model)
     config = CacheConfig(
@@ -69,5 +72,7 @@ def make_compressed_cache(
         seed=seed,
         backend=backend,
         sink_tokens=sink_tokens,
+        model_name=model_name,
+        calibrated_dir=calibrated_dir,
     )
     return create_cache_layers(config)

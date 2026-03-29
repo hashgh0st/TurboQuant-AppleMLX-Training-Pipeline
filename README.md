@@ -93,12 +93,21 @@ mlx-tq bench --model mlx-community/Qwen2.5-0.5B-Instruct-4bit --suite quick
 
 # Run benchmarks with promotion gate (exits non-zero if any profile fails)
 mlx-tq bench --model mlx-community/Qwen2.5-0.5B-Instruct-4bit --suite quick --gate
+
+# Calibrate codebooks to a specific model (fits to real activations)
+mlx-tq calibrate --model mlx-community/Qwen2.5-0.5B-Instruct-4bit
+
+# Use calibrated codebooks during generation
+mlx-tq compare --model mlx-community/Qwen2.5-0.5B-Instruct-4bit \
+    --prompt "What is the capital of France?" --kv-bits 3 \
+    --calibrated-dir ~/.cache/mlx-turboquant/calibrated/mlx-community__Qwen2.5-0.5B-Instruct-4bit
 ```
 
 `--kv-bits` is validated at the CLI boundary and currently supports `2`, `3`, or `4`.
 `generate` defaults to `baseline`; `--cache-mode compressed` is an explicit experimental opt-in.
 Compressed generation also supports experimental `--value-kv-bits`, `--backend metal`, and `--sink-tokens` tuning knobs for mixed-precision, Metal-backed, and attention-sink evaluation.
 The `bench` subcommand supports `--gate` to enforce promotion thresholds (min 80% token match, min 10 first-diverge, max 3x slowdown) and exit non-zero on failure.
+The `calibrate` subcommand fits Lloyd-Max codebooks to actual model activations, producing separate key/value codebooks that capture model-specific distribution patterns. Pass `--calibrated-dir` to `generate` or `compare` to use them.
 
 ### Python API
 
@@ -141,19 +150,19 @@ The new [`examples/evaluate_compression_profiles.py`](examples/evaluate_compress
 
 ```
 mlx_turboquant/
-  codec/        Phase 1: codebooks, transforms, packbits, stage1_codec
+  codec/        Phase 1: codebooks, transforms, packbits, stage1_codec, calibrate
   cache/        Phase 2: compressed_cache, memory_accounting, cache_layout
   integration/  Phase 3: mlx_lm_adapter, generate_wrapper
   bench/        Phase 4+: memory, latency, quality, prompts, report, promotion
   kernels/      Phase 5: metal_pack (fused unpack+dequant Metal kernels)
-  cli.py        CLI entry point (generate, compare, info, bench)
+  cli.py        CLI entry point (generate, compare, info, bench, calibrate)
 ```
 
 ## Development
 
 ```bash
 uv sync --all-extras          # install all deps
-uv run pytest                 # 213 tests
+uv run pytest                 # 234 tests
 uv run ruff check .           # lint
 uv run mypy mlx_turboquant/   # type check (strict)
 ```
