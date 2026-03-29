@@ -2,9 +2,9 @@
 
 ## Project Overview
 
-Apple-Silicon KV-cache compression for MLX/MLX-LM targeting Qwen 2.5/3 models on M4 Mini 16 GB.
+Apple-Silicon KV-cache compression for MLX/MLX-LM, implementing TurboQuant research. Targeting Qwen 2.5/3 models on M4 Mini 16 GB.
 
-**Current status:** Pivoting from TurboQuant rotation approach to per-channel quantization. The rotation + Lloyd-Max approach (Stages 1 & 2) produces unusable output at 2-4 bits on real models due to per-element error scaling with vector norm. See `docs/ROTATION_APPROACH_POSTMORTEM.md` for full analysis. Infrastructure (cache protocol, sinks, incremental decode, Metal kernels, benchmarks, promotion gates) transfers to the new approach.
+**Current status:** Rotation codec produces coherent output at 4-bit after norm correction fix (attention logit error range improved 25x). Quality degrades over long sequences. Further improvements in progress — see `docs/ROTATION_APPROACH_POSTMORTEM.md` for full investigation history and `docs/QUALITY_IMPROVEMENT_ROADMAP.md` for next steps.
 
 ## Tech Stack
 
@@ -23,7 +23,7 @@ Apple-Silicon KV-cache compression for MLX/MLX-LM targeting Qwen 2.5/3 models on
 
 4. **Use `Literal["reference", "metal"]` for backend selection**, not bare strings.
 
-5. **Always compute norms in float32 before storing as float16** — float16 sum-of-squares overflows for large activations like RoPE'd keys.
+5. **Norms are stored as float32 with correction factor baked in.** The codec stores `original_norm / ||reconstruction_unit||` instead of the raw norm. This ensures `||reconstructed|| == ||original||` exactly — the single biggest quality fix. Float32 is required because key norms of 400-1000+ lose precision in float16.
 
 6. **Metal shader sources are templated from VALUES_PER_WORD to stay in sync with packbits constants.** Do not hard-code values-per-word in shader source strings.
 
@@ -86,4 +86,6 @@ mlx_turboquant/
 - `docs/RESEARCHv2.md` — Research brief
 - `docs/TDDv2.md` — Technical design
 - `docs/IMPLEMENTATION_PLAN.md` — Phased build plan (Phases 0-10 complete)
-- `docs/ROTATION_APPROACH_POSTMORTEM.md` — Why the rotation approach fails at 2-4 bits on real models
+- `docs/ROTATION_APPROACH_POSTMORTEM.md` — Investigation history: initial failure, norm correction fix, QJL analysis
+- `docs/QUALITY_IMPROVEMENT_ROADMAP.md` — Remaining quality improvements and research directions
+- `docs/KIVI_PIVOT_BRIEF.md` — Design brief for a separate per-channel quantization project

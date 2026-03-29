@@ -1,22 +1,26 @@
 # mlx-turboquant
 
-Apple-Silicon KV-cache compression for MLX/MLX-LM, targeting Qwen 2.5/3 models on M4 Mini 16 GB.
+Apple-Silicon KV-cache compression for MLX/MLX-LM, implementing [TurboQuant](https://research.google/blog/turboquant-redefining-ai-efficiency-with-extreme-compression/) research. Targeting Qwen 2.5/3 models on M4 Mini 16 GB.
 
 ## What is this?
 
-`mlx-turboquant` compresses the KV cache during LLM inference on Apple Silicon, reducing memory pressure and enabling longer context windows.
+`mlx-turboquant` compresses the KV cache during LLM inference on Apple Silicon, reducing memory pressure and enabling longer context windows. It uses randomized Hadamard rotation with Lloyd-Max optimal codebooks and a critical **norm correction** technique to achieve 3.8x compression at 4-bit with coherent output.
 
-**Status: pivoting quantization approach.** The original TurboQuant-inspired rotation + Lloyd-Max codec (Stages 1 & 2) does not produce usable output at 2-4 bits on real models. Testing on Qwen2.5-7B showed that per-element quantization error scales with vector norm, destroying attention logit differences. See [`docs/ROTATION_APPROACH_POSTMORTEM.md`](docs/ROTATION_APPROACH_POSTMORTEM.md) for the full analysis. The project is pivoting to per-channel group quantization (KIVI-style), which preserves per-element scale.
+**Status:** 4-bit compression produces coherent output on Qwen2.5-7B after applying norm correction (the key fix identified from llama.cpp's TurboQuant implementation). Quality degrades over long sequences (~30+ tokens). See [`docs/QUALITY_IMPROVEMENT_ROADMAP.md`](docs/QUALITY_IMPROVEMENT_ROADMAP.md) for next steps and [`docs/ROTATION_APPROACH_POSTMORTEM.md`](docs/ROTATION_APPROACH_POSTMORTEM.md) for the full investigation.
 
-The infrastructure (duck-type KVCache protocol, attention sinks, incremental decode, Metal kernels, benchmark suite, promotion gates) carries forward.
+## Results (Qwen2.5-7B-Instruct-4bit, 4-bit compression)
 
-## Memory Geometry (Qwen 2.5-0.5B, rotation codec)
+| Metric | Value |
+|--------|-------|
+| Compression ratio | **3.8x** |
+| Attention logit error range | **4.9** (signal range: 38) |
+| Attention logit bias | -61.9 (uniform, softmax-safe) |
+| First ~30 tokens | Coherent, on-topic |
+| Long sequences | Degrades (ongoing improvement) |
 
-| Metric | Baseline | 3-bit Compressed |
-|--------|----------|-----------------|
-| Occupied cache at 4K tokens | 48.0 MB | 11.2 MB (**4.3x**) |
+### The Norm Correction Breakthrough
 
-Note: memory savings are real but the rotation codec's output quality is not usable. The per-channel codec (in development) will deliver both compression and quality.
+The critical fix: store `original_norm / ||reconstruction_unit||` instead of the raw norm. This ensures `||reconstructed|| == ||original||` exactly, reducing attention logit error range from 121.9 to 4.9 (25x improvement). Discovered by analyzing how llama.cpp's TurboQuant implementation achieves quality.
 
 ## How it works
 
@@ -24,7 +28,7 @@ Note: memory savings are real but the rotation codec's output quality is not usa
 Input KV vectors (float16)
     |
     v
-1. Normalize ── compute L2 norm, store as float16
+1. Normalize ── compute L2 norm in float32
     |
     v
 2. Rotate ──── randomized Hadamard transform (data-oblivious)
@@ -33,13 +37,16 @@ Input KV vectors (float16)
 3. Quantize ── Lloyd-Max optimal codebook for Beta(d/2, d/2)
     |
     v
-4. Pack ────── 2/3/4-bit indices into uint32 words
+4. Norm correct ── store original_norm / ||reconstruction_unit|| as float32
     |
     v
-Compressed storage (4-10x smaller)
+5. Pack ────── 2/3/4-bit indices into uint32 words
+    |
+    v
+Compressed storage (3.8x smaller at 4-bit)
 ```
 
-At attention time, the process reverses: unpack, dequantize, inverse rotate, rescale. An optional Metal kernel fuses unpack+dequant for 1.6x decode speedup.
+At attention time, the process reverses: unpack, dequantize via codebook lookup, inverse Hadamard rotation, rescale by corrected norm. An optional Metal kernel fuses unpack+dequant for 1.6x decode speedup.
 
 ## Requirements
 
@@ -164,7 +171,7 @@ mlx_turboquant/
 
 ```bash
 uv sync --all-extras          # install all deps
-uv run pytest                 # 234 tests
+uv run pytest                 # 235 tests
 uv run ruff check .           # lint
 uv run mypy mlx_turboquant/   # type check (strict)
 ```
@@ -173,7 +180,11 @@ uv run mypy mlx_turboquant/   # type check (strict)
 
 1. [TurboQuant: Redefining AI efficiency with extreme compression](https://research.google/blog/turboquant-redefining-ai-efficiency-with-extreme-compression/) — Google Research, March 2026
 2. [TurboQuant: Online Vector Quantization with Near-optimal Distortion Rate](https://arxiv.org/abs/2504.19874) — arXiv, April 2025
-3. [MLX](https://github.com/ml-explore/mlx) / [MLX-LM](https://github.com/ml-explore/mlx-lm) — Apple's ML framework for Apple Silicon
+3. [KIVI: Asymmetric 2bit Quantization for KV Cache](https://arxiv.org/abs/2402.02750) — ICML 2024
+4. [KVQuant: Towards 10M Context Length LLM Inference](https://arxiv.org/abs/2401.18079) — NeurIPS 2024
+5. [RotateKV: Outlier-Aware Rotation for KV Cache Quantization](https://arxiv.org/abs/2501.16383) — IJCAI 2025
+6. [llama.cpp TurboQuant discussion](https://github.com/ggml-org/llama.cpp/discussions/20969) — norm correction technique
+7. [MLX](https://github.com/ml-explore/mlx) / [MLX-LM](https://github.com/ml-explore/mlx-lm) — Apple's ML framework for Apple Silicon
 
 ## License
 

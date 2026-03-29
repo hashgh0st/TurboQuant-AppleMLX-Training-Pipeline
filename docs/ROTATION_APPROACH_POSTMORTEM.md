@@ -1,12 +1,17 @@
-# Rotation-Based KV Cache Compression: Postmortem
+# Rotation-Based KV Cache Compression: Investigation Log
 
 ## Summary
 
-The TurboQuant-inspired rotation + Lloyd-Max approach does NOT produce usable
-output at 2-4 bits on real LLMs (tested on Qwen2.5-7B-Instruct-4bit and
-Qwen2.5-0.5B-Instruct-4bit). Stage 2 (QJL residual correction) makes the
-problem worse, not better. This document captures the root cause analysis and
-motivates the pivot to per-channel quantization.
+The TurboQuant rotation + Lloyd-Max approach initially produced unusable output
+at 2-4 bits on real LLMs. After investigating QJL (Stage 2), pre-RoPE
+interception, and calibrated codebooks — all of which failed — we discovered
+that working implementations (llama.cpp, turboquant_plus) use a **norm
+correction** technique we had missed. Applying norm correction improved
+attention logit error range by **25x**, producing coherent output for the
+first time.
+
+**Current state**: 4-bit produces coherent output that degrades over long
+sequences. Further improvements documented in `QUALITY_IMPROVEMENT_ROADMAP.md`.
 
 ## What We Built
 
@@ -118,11 +123,58 @@ The infrastructure built for the rotation approach transfers directly:
 - Promotion gates and benchmark suite
 - Calibration pipeline (for distribution analysis)
 
-## Next Step: Per-Channel Quantization
+## The Fix: Norm Correction (from llama.cpp community)
 
-Replace the rotation + scalar codebook approach with per-channel group
-quantization:
-- Group keys/values into blocks of 32-128 elements
-- Compute per-group scale + zero-point (asymmetric quantization)
-- Store quantized values + per-group parameters
-- No rotation needed; each element's error is proportional to its own magnitude
+Research into how atomic.chat (a macOS wrapper around llama.cpp) and other
+working implementations handle TurboQuant revealed three critical fixes we
+were missing. The most important:
+
+### Fix 1: Norm Correction (25x improvement)
+
+**Before**: Store `original_norm`, multiply during decode.
+**After**: Store `original_norm / ||reconstruction_unit||`, multiply during decode.
+
+This ensures `||reconstructed|| == ||original||` exactly. The reconstruction
+unit vector has norm != 1.0 due to quantization (centroids don't perfectly
+reconstruct the unit sphere). Without correction, the norm mismatch creates
+non-uniform scaling that destroys attention logit differences.
+
+**Results on Qwen2.5-7B-Instruct-4bit at 4-bit**:
+
+| Metric | Without Norm Correction | With Norm Correction |
+|--------|------------------------|---------------------|
+| Attention logit error range | 121.9 | **4.9** |
+| Signal range | 38 | 38 |
+| Error/signal ratio | 3.1x (broken) | **0.13x (works)** |
+| Mean error | +216 (non-uniform) | -61.9 (uniform bias, softmax-safe) |
+| Output quality | "perdida perdida..." | Coherent English |
+
+### Fix 2: Float32 Norms (precision)
+
+Changed norm storage from float16 to float32. With key norms of 400-1000+,
+float16 loses precision needed for the corrected norm ratio.
+
+### Fix 3: Drop QJL (already validated)
+
+Every working implementation uses ALL bits for Lloyd-Max MSE, not (b-1) MSE
++ 1-bit QJL. QJL removes bias but explodes variance — softmax tolerates
+uniform bias but not variance. Our earlier QJL testing confirmed this
+(error range 121.9 -> 1173.7 with QJL).
+
+### What We Investigated That Didn't Help
+
+| Approach | Result | Why |
+|----------|--------|-----|
+| QJL (Stage 2) | 10x worse | Variance explosion overwhelms bias correction |
+| Pre-RoPE interception | 30% better | k_proj creates heterogeneous magnitudes before RoPE |
+| Calibrated codebooks | No change | Same structural problem, not a codebook issue |
+| Attention sinks | Mixed | Helps first tokens but FP16/compressed boundary hurts |
+
+## Remaining Quality Gap
+
+Even with norm correction, output degrades over long sequences (~30+ tokens).
+The 70/128 "bad elements" remain — per-element error is still proportional
+to vector norm, not element magnitude. But the uniform bias is now harmless
+to softmax, and the error RANGE (4.9) is below the signal range (38).
+
+Further improvements are documented in `QUALITY_IMPROVEMENT_ROADMAP.md`.
