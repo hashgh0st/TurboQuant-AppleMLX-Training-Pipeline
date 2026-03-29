@@ -4,7 +4,7 @@
 
 Apple-Silicon KV-cache compression for MLX/MLX-LM, inspired by TurboQuant research. Stage-1-only prototype targeting Qwen 2.5/3 models on M4 Mini 16 GB.
 
-**Current status:** Phase 4 complete. Phase 5 (Metal Optimization) is next.
+**Current status:** Phase 5 complete. Phase 6 (Polish & Ship) is next.
 
 ## Tech Stack
 
@@ -24,6 +24,8 @@ Apple-Silicon KV-cache compression for MLX/MLX-LM, inspired by TurboQuant resear
 4. **Use `Literal["reference", "metal"]` for backend selection**, not bare strings.
 
 5. **Always compute norms in float32 before storing as float16** — float16 sum-of-squares overflows for large activations like RoPE'd keys.
+
+6. **Metal shader sources are templated from VALUES_PER_WORD to stay in sync with packbits constants.** Do not hard-code values-per-word in shader source strings.
 
 5. **`memory_accounting.py` owns calculations, `bench/memory.py` owns iteration and reporting.** Don't duplicate the formula or `cache.nbytes` reading in the bench module.
 
@@ -71,4 +73,4 @@ mlx_turboquant/
 - `docs/PRDv2.md` — Product requirements
 - `docs/RESEARCHv2.md` — Research brief
 - `docs/TDDv2.md` — Technical design
-- `docs/IMPLEMENTATION_PLAN.md` — Phased build plan (Phase 4 complete)
+- `docs/IMPLEMENTATION_PLAN.md` — Phased build plan (Phase 5 complete)

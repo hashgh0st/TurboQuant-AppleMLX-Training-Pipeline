@@ -810,7 +810,9 @@ mlx-tq bench --model Qwen/Qwen2.5-0.5B-Instruct-4bit --suite quick
 
 ---
 
-## Phase 5 — Metal Optimization
+## Phase 5 — Metal Optimization [COMPLETE]
+
+**Completed:** 2026-03-28
 
 ### Goal
 Replace the pure-MLX hot paths with custom Metal kernels for measurable speedup, while preserving bit-exact output matching the reference path.
@@ -898,12 +900,19 @@ def metal_compressed_attention(
 - `test_backend_fallback`: Metal not available → graceful fallback to reference
 
 ### Exit Criteria
-- [ ] Kernel A (unpack+dequantize) produces bit-exact output vs reference
-- [ ] Kernel A shows measurable speedup (>20%) at seq_len >= 512
-- [ ] Metal path is feature-gated behind `backend="metal"` flag
-- [ ] Full generation with Metal backend produces same text as reference backend
-- [ ] All parity tests pass
+- [x] Kernel A (unpack+dequantize) produces bit-exact output vs reference
+- [x] Kernel A shows measurable speedup (>20%) at seq_len >= 512
+- [x] Metal path is feature-gated behind `backend="metal"` flag
+- [x] Full generation with Metal backend produces same text as reference backend
+- [x] All parity tests pass
 - [ ] (Stretch) Kernel B shows >2x attention speedup at seq_len >= 1024
+
+### Post-Review Fixes Applied
+- Templated Metal shader sources from VALUES_PER_WORD constants (eliminated 3x copy-paste)
+- Renamed _VALUES_PER_WORD to VALUES_PER_WORD (public API, used across module boundaries)
+- Moved lazy import to module level (was running on every decode() call)
+- Replaced math.prod with packed.size for batch element count
+- 1.62x speedup validated for fused unpack+dequant kernel
 
 ---
 

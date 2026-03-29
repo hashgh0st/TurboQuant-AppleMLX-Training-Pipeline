@@ -14,13 +14,13 @@ import math
 
 import mlx.core as mx
 
-# Values per uint32 word for each bit-width
-_VALUES_PER_WORD = {2: 16, 3: 10, 4: 8}
+# Values per uint32 word for each bit-width (public: used by kernels/metal_pack.py)
+VALUES_PER_WORD: dict[int, int] = {2: 16, 3: 10, 4: 8}
 
 
 def packed_dim(head_dim: int, bits: int) -> int:
     """Number of uint32 values needed to pack head_dim indices at given bit-width."""
-    vpw = _VALUES_PER_WORD[bits]
+    vpw = VALUES_PER_WORD[bits]
     return math.ceil(head_dim / vpw)
 
 
@@ -30,7 +30,7 @@ def pack(indices: mx.array, bits: int) -> mx.array:
     Each group of values_per_word indices is packed into one uint32 by
     shifting each value to its bit position and OR-ing them together.
     """
-    vpw = _VALUES_PER_WORD[bits]
+    vpw = VALUES_PER_WORD[bits]
     *batch_shape, head_dim_val = indices.shape
     padded_dim = vpw * math.ceil(head_dim_val / vpw)
 
@@ -58,7 +58,7 @@ def unpack(packed: mx.array, bits: int, head_dim: int) -> mx.array:
 
     Extracts each value by right-shifting and masking with the bit-width mask.
     """
-    vpw = _VALUES_PER_WORD[bits]
+    vpw = VALUES_PER_WORD[bits]
     mask = mx.array((1 << bits) - 1, dtype=mx.uint32)
     *batch_shape, num_words = packed.shape
 

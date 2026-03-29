@@ -32,4 +32,5 @@ def create_cache_layers(config: CacheConfig) -> list[CompressedKVCache]:
         seed=config.seed,
     )
     codec = Stage1Codec(codec_config)
-    return [CompressedKVCache(codec) for _ in range(config.num_layers)]
+    use_metal = config.backend == "metal"
+    return [CompressedKVCache(codec, use_metal=use_metal) for _ in range(config.num_layers)]

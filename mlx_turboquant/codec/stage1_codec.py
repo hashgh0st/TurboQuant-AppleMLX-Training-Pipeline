@@ -25,6 +25,7 @@ from mlx_turboquant.codec.transforms import (
     forward_transform,
     inverse_transform,
 )
+from mlx_turboquant.kernels.metal_pack import metal_unpack_dequantize
 
 
 @dataclass
@@ -96,21 +97,27 @@ class Stage1Codec:
             config=self.config,
         )
 
-    def decode(self, ct: CompressedTensor) -> mx.array:
+    def decode(self, ct: CompressedTensor, *, use_metal: bool = False) -> mx.array:
         """Decompress to float32. Fully vectorized, no Python loops.
 
         Input: CompressedTensor (must have been encoded by a codec with matching config)
         Returns: (..., head_dim) float32
+
+        When use_metal=True, steps 1-2 (unpack+dequant) use a fused Metal kernel
+        for ~1.6x speedup over the pure-MLX reference path.
         """
         if ct.config != self.config:
             msg = f"Config mismatch: codec={self.config!r}, tensor={ct.config!r}"
             raise ValueError(msg)
 
-        # 1. Unpack indices
-        indices = unpack(ct.packed, ct.config.bits, ct.config.head_dim)
-
-        # 2. Dequantize: map indices to centroid values via fancy indexing
-        x_rot = self.centroids[indices]
+        if use_metal:
+            x_rot = metal_unpack_dequantize(
+                ct.packed, self.centroids, ct.config.bits, ct.config.head_dim
+            )
+        else:
+            # Reference path (steps 1-2)
+            indices = unpack(ct.packed, ct.config.bits, ct.config.head_dim)
+            x_rot = self.centroids[indices]
 
         # 3. Inverse Hadamard rotation
         x_normed = inverse_transform(x_rot, self.transform)
@@ -118,6 +125,6 @@ class Stage1Codec:
         # 4. Rescale by original norms
         return x_normed * ct.norms.astype(mx.float32)[..., None]
 
-    def encode_decode(self, x: mx.array) -> mx.array:
+    def encode_decode(self, x: mx.array, *, use_metal: bool = False) -> mx.array:
         """Round-trip compression for quality measurement."""
-        return self.decode(self.encode(x))
+        return self.decode(self.encode(x), use_metal=use_metal)

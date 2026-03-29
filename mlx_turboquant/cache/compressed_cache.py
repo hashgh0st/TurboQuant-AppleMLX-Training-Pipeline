@@ -28,8 +28,9 @@ class CompressedKVCache:
 
     step = 256  # allocation granularity, matching KVCache
 
-    def __init__(self, codec: Stage1Codec) -> None:
+    def __init__(self, codec: Stage1Codec, *, use_metal: bool = False) -> None:
         self.codec = codec
+        self.use_metal = use_metal
         self.offset: int = 0
         self._packed_keys: mx.array | None = None
         self._key_norms: mx.array | None = None
@@ -126,8 +127,12 @@ class CompressedKVCache:
         ct_k = CompressedTensor(packed=pk_flat, norms=kn_flat, config=self.codec.config)
         ct_v = CompressedTensor(packed=pv_flat, norms=vn_flat, config=self.codec.config)
 
-        keys_dec = self.codec.decode(ct_k).reshape(B, n_kv_heads, self.offset, head_dim)
-        vals_dec = self.codec.decode(ct_v).reshape(B, n_kv_heads, self.offset, head_dim)
+        keys_dec = self.codec.decode(ct_k, use_metal=self.use_metal).reshape(
+            B, n_kv_heads, self.offset, head_dim
+        )
+        vals_dec = self.codec.decode(ct_v, use_metal=self.use_metal).reshape(
+            B, n_kv_heads, self.offset, head_dim
+        )
         return keys_dec, vals_dec
 
     @property

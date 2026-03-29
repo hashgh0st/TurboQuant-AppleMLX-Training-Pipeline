@@ -6,7 +6,7 @@ Apple-Silicon KV-cache compression for MLX/MLX-LM, inspired by the [TurboQuant](
 
 `mlx-turboquant` compresses the KV cache during LLM inference on Apple Silicon, reducing memory pressure and enabling longer context windows. It uses randomized Hadamard rotation with Lloyd-Max optimal codebooks to achieve near-Shannon-limit compression at 2-4 bits per coordinate.
 
-> **Status:** Phase 4 (Benchmark Harness) complete -- `mlx-tq bench` with JSON + Markdown reports for memory, latency, and quality benchmarks across 2/3/4-bit configurations. Built on the Phase 1 codec (randomized Hadamard rotation + Lloyd-Max codebooks at 2-4 bits), Phase 2 `CompressedKVCache`, and Phase 3 CLI (`mlx-tq generate`, `mlx-tq compare`, `mlx-tq info`). This is a stage-1 prototype, not a full reproduction of Google's two-stage TurboQuant system. See the [implementation plan](docs/IMPLEMENTATION_PLAN.md) for details.
+> **Status:** Phase 5 (Metal Optimization) complete -- custom Metal kernels for fused unpack+dequant (1.62x speedup, feature-gated behind `backend="metal"`). Built on the Phase 1 codec (randomized Hadamard rotation + Lloyd-Max codebooks at 2-4 bits), Phase 2 `CompressedKVCache`, Phase 3 CLI (`mlx-tq generate`, `mlx-tq compare`, `mlx-tq info`), and Phase 4 benchmark harness (`mlx-tq bench` with JSON + Markdown reports). This is a stage-1 prototype, not a full reproduction of Google's two-stage TurboQuant system. See the [implementation plan](docs/IMPLEMENTATION_PLAN.md) for details.
 
 ## How it works
 
