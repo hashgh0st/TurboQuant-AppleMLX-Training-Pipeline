@@ -71,11 +71,13 @@ class Stage1Codec:
         Input: (..., head_dim) float16 or float32
         Returns: CompressedTensor with packed indices and norms
         """
-        # 1. Compute per-vector L2 norms
-        norms = mx.linalg.norm(x, axis=-1)
+        # 1. Compute in float32 to avoid norm overflow in float16
+        # (float16 sum-of-squares overflows for large activations like RoPE'd keys)
+        x_f32 = x.astype(mx.float32) if x.dtype != mx.float32 else x
+        norms = mx.linalg.norm(x_f32, axis=-1)
 
         # 2. Normalize to unit vectors (guard against zero vectors)
-        x_normed = x / (norms[..., None] + 1e-8)
+        x_normed = x_f32 / (norms[..., None] + 1e-8)
 
         # 3. Randomized Hadamard rotation
         x_rot = forward_transform(x_normed, self.transform)

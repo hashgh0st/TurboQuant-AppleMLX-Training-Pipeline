@@ -4,7 +4,7 @@
 
 Apple-Silicon KV-cache compression for MLX/MLX-LM, inspired by TurboQuant research. Stage-1-only prototype targeting Qwen 2.5/3 models on M4 Mini 16 GB.
 
-**Current status:** Phase 2 complete. Phase 3 (MLX-LM Integration + CLI) is next.
+**Current status:** Phase 3 complete. Phase 4 (Benchmark Harness) is next.
 
 ## Tech Stack
 
@@ -22,6 +22,8 @@ Apple-Silicon KV-cache compression for MLX/MLX-LM, inspired by TurboQuant resear
 3. **Pass `kv_bits=None` to MLX-LM's `generate_step()`** to disable its built-in affine KV quantization. Our CompressedKVCache handles compression internally.
 
 4. **Use `Literal["reference", "metal"]` for backend selection**, not bare strings.
+
+5. **Always compute norms in float32 before storing as float16** — float16 sum-of-squares overflows for large activations like RoPE'd keys.
 
 5. **`memory_accounting.py` owns calculations, `bench/memory.py` owns iteration and reporting.** Don't duplicate the formula or `cache.nbytes` reading in the bench module.
 
@@ -69,4 +71,4 @@ mlx_turboquant/
 - `docs/PRDv2.md` — Product requirements
 - `docs/RESEARCHv2.md` — Research brief
 - `docs/TDDv2.md` — Technical design
-- `docs/IMPLEMENTATION_PLAN.md` — Phased build plan (Phase 2 complete)
+- `docs/IMPLEMENTATION_PLAN.md` — Phased build plan (Phase 3 complete)

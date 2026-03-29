@@ -1,8 +1,153 @@
-"""CLI entry point for mlx-tq: generate, compare, info, bench commands."""
+"""CLI entry point for mlx-tq: generate, compare, info commands."""
 
 from __future__ import annotations
+
+import argparse
+import sys
+
+from mlx_turboquant.integration.generate_wrapper import GenerationResult
+
+
+def _print_result(result: GenerationResult, header: str | None = None) -> None:
+    """Print a generation result with metrics."""
+    label = header or result.cache_mode
+    print(f"\n--- {label} ---")
+    print(result.text)
+    print(f"\nTokens: {result.tokens_generated}")
+    print(f"TTFT: {result.ttft_ms:.1f} ms")
+    print(f"Decode: {result.decode_tokens_per_sec:.1f} tok/s")
+    print(f"Cache: {result.cache_bytes / 1024:.1f} KB")
+
+
+def _cmd_generate(args: argparse.Namespace) -> None:
+    """Generate text with baseline or compressed KV cache."""
+    from mlx_lm import load
+
+    from mlx_turboquant.integration.generate_wrapper import (
+        generate_baseline,
+        generate_with_compressed_cache,
+    )
+
+    print(f"Loading model: {args.model}...")
+    loaded = load(args.model)
+    model, tokenizer = loaded[0], loaded[1]
+
+    if args.cache_mode == "compressed":
+        result = generate_with_compressed_cache(
+            model, tokenizer, args.prompt,
+            kv_bits=args.kv_bits, max_tokens=args.max_tokens, temp=args.temp,
+        )
+    else:
+        result = generate_baseline(
+            model, tokenizer, args.prompt, max_tokens=args.max_tokens, temp=args.temp,
+        )
+
+    _print_result(result)
+
+
+def _cmd_compare(args: argparse.Namespace) -> None:
+    """Run baseline and compressed generation side-by-side."""
+    from mlx_lm import load
+
+    from mlx_turboquant.integration.generate_wrapper import (
+        generate_baseline,
+        generate_with_compressed_cache,
+    )
+
+    print(f"Loading model: {args.model}...")
+    loaded = load(args.model)
+    model, tokenizer = loaded[0], loaded[1]
+
+    print("Running baseline...")
+    baseline = generate_baseline(
+        model, tokenizer, args.prompt, max_tokens=args.max_tokens, temp=args.temp,
+    )
+
+    print(f"Running compressed ({args.kv_bits}-bit)...")
+    compressed = generate_with_compressed_cache(
+        model, tokenizer, args.prompt,
+        kv_bits=args.kv_bits, max_tokens=args.max_tokens, temp=args.temp,
+    )
+
+    _print_result(baseline, header="BASELINE")
+    _print_result(compressed, header=f"COMPRESSED ({args.kv_bits}-bit)")
+
+    if baseline.cache_bytes > 0 and compressed.cache_bytes > 0:
+        ratio = baseline.cache_bytes / compressed.cache_bytes
+        savings = (1 - compressed.cache_bytes / baseline.cache_bytes) * 100
+        print(f"\nCompression: {ratio:.1f}x ({savings:.0f}% memory saved)")
+
+
+def _cmd_info(args: argparse.Namespace) -> None:
+    """Show model architecture and memory estimates."""
+    from mlx_lm import load
+
+    from mlx_turboquant.cache.memory_accounting import estimate_memory
+    from mlx_turboquant.integration.mlx_lm_adapter import introspect_model
+
+    print(f"Loading model: {args.model}...")
+    model = load(args.model)[0]
+    info = introspect_model(model)
+
+    print(f"\nModel: {args.model}")
+    print(f"Layers: {info.num_layers}")
+    print(f"KV heads: {info.num_kv_heads}")
+    print(f"Head dim: {info.head_dim}")
+    print(f"Max seq len: {info.max_seq_len}")
+
+    print("\nMemory estimates at 4096 tokens:")
+    for bits in (2, 3, 4):
+        report = estimate_memory(
+            num_layers=info.num_layers,
+            num_kv_heads=info.num_kv_heads,
+            head_dim=info.head_dim,
+            kv_bits=bits,
+            seq_len=4096,
+        )
+        print(
+            f"  {bits}-bit: {report.compressed_bytes / 1024 / 1024:.1f} MB "
+            f"(baseline: {report.baseline_bytes / 1024 / 1024:.1f} MB, "
+            f"{report.compression_ratio:.1f}x)"
+        )
 
 
 def main() -> None:
     """Entry point for the mlx-tq CLI."""
-    raise SystemExit("mlx-tq CLI not yet implemented. Coming in Phase 3.")
+    parser = argparse.ArgumentParser(
+        prog="mlx-tq",
+        description="mlx-turboquant: Apple-Silicon KV-cache compression for MLX-LM",
+    )
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    # generate
+    gen = subparsers.add_parser("generate", help="Generate text")
+    gen.add_argument("--model", required=True, help="HuggingFace model path")
+    gen.add_argument("--prompt", required=True, help="Input prompt")
+    gen.add_argument(
+        "--cache-mode", choices=["compressed", "baseline"], default="compressed",
+        help="Cache mode (default: compressed)",
+    )
+    gen.add_argument("--kv-bits", type=int, default=3, help="Compression bits (default: 3)")
+    gen.add_argument("--max-tokens", type=int, default=256, help="Max tokens to generate")
+    gen.add_argument("--temp", type=float, default=0.0, help="Sampling temperature")
+    gen.set_defaults(func=_cmd_generate)
+
+    # compare
+    cmp = subparsers.add_parser("compare", help="Compare baseline vs compressed")
+    cmp.add_argument("--model", required=True, help="HuggingFace model path")
+    cmp.add_argument("--prompt", required=True, help="Input prompt")
+    cmp.add_argument("--kv-bits", type=int, default=3, help="Compression bits (default: 3)")
+    cmp.add_argument("--max-tokens", type=int, default=256, help="Max tokens to generate")
+    cmp.add_argument("--temp", type=float, default=0.0, help="Sampling temperature")
+    cmp.set_defaults(func=_cmd_compare)
+
+    # info
+    info = subparsers.add_parser("info", help="Show model info and memory estimates")
+    info.add_argument("--model", required=True, help="HuggingFace model path")
+    info.set_defaults(func=_cmd_info)
+
+    parsed = parser.parse_args()
+    if not hasattr(parsed, "func"):
+        parser.print_help()
+        sys.exit(1)
+    parsed.func(parsed)

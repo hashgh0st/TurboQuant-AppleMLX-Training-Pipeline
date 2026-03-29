@@ -517,7 +517,9 @@ def create_cache_layers(config: CacheConfig, codec: Stage1Codec) -> list[Compres
 
 ---
 
-## Phase 3 — MLX-LM Integration + CLI
+## Phase 3 — MLX-LM Integration + CLI [COMPLETE]
+
+**Completed:** 2026-03-28
 
 ### Goal
 Wire the compressed cache into MLX-LM's generation pipeline for Qwen models, expose a CLI, and enable side-by-side baseline vs compressed generation.
@@ -631,12 +633,20 @@ def main():
 **Note**: Integration tests require downloading a model. Mark with `@pytest.mark.slow` and skip in CI unless `MLX_TQ_SLOW_TESTS=1` is set.
 
 ### Exit Criteria
-- [ ] `mlx-tq generate --model Qwen/Qwen2.5-0.5B-Instruct-4bit --prompt "Hello" --cache-mode compressed --kv-bits 3` produces coherent text
-- [ ] `mlx-tq compare` shows side-by-side baseline vs compressed output with metrics
-- [ ] `mlx-tq info` displays model architecture and memory estimates
-- [ ] No modifications to MLX-LM source code — pure wrapper/adapter pattern
-- [ ] Compressed generation runs without OOM on M4 Mini 16 GB
-- [ ] All integration tests pass with Qwen 0.5B model
+- [x] `mlx-tq generate --model Qwen/Qwen2.5-0.5B-Instruct-4bit --prompt "Hello" --cache-mode compressed --kv-bits 3` produces coherent text
+- [x] `mlx-tq compare` shows side-by-side baseline vs compressed output with metrics
+- [x] `mlx-tq info` displays model architecture and memory estimates
+- [x] No modifications to MLX-LM source code — pure wrapper/adapter pattern
+- [x] Compressed generation runs without OOM on M4 Mini 16 GB
+- [x] All integration tests pass with Qwen 0.5B model
+
+### Post-Review Fixes Applied
+- Fixed float16 norm overflow bug (RoPE'd keys overflow float16 sum-of-squares, causing NaN — now computes in float32)
+- Renamed prefill_time_ms to ttft_ms (time-to-first-token) for accurate labeling
+- Pass max_tokens to generate_step (was relying on generate_step's internal default)
+- Separated ModelInfo from CacheConfig (introspect_model no longer returns CacheConfig with hardcoded kv_bits)
+- Extracted _print_result CLI helper to eliminate 3x copy-paste
+- Added zero-guard on compression ratio division
 
 ---
 
