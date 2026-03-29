@@ -6,14 +6,38 @@ Apple-Silicon KV-cache compression for MLX/MLX-LM, inspired by the [TurboQuant](
 
 `mlx-turboquant` compresses the KV cache during LLM inference on Apple Silicon, reducing memory pressure and enabling longer context windows. It uses randomized Hadamard rotation with Lloyd-Max optimal codebooks to achieve near-Shannon-limit compression at 2-4 bits per coordinate.
 
-> **Status:** Phase 5 (Metal Optimization) complete -- custom Metal kernels for fused unpack+dequant (1.62x speedup, feature-gated behind `backend="metal"`). Built on the Phase 1 codec (randomized Hadamard rotation + Lloyd-Max codebooks at 2-4 bits), Phase 2 `CompressedKVCache`, Phase 3 CLI (`mlx-tq generate`, `mlx-tq compare`, `mlx-tq info`), and Phase 4 benchmark harness (`mlx-tq bench` with JSON + Markdown reports). This is a stage-1 prototype, not a full reproduction of Google's two-stage TurboQuant system. See the [implementation plan](docs/IMPLEMENTATION_PLAN.md) for details.
+This is a **stage-1 prototype** — not a full reproduction of Google's two-stage TurboQuant system.
+
+## Benchmarks (Qwen 2.5-0.5B on M4 Mini 16 GB)
+
+| Metric | Baseline | 3-bit Compressed |
+|--------|----------|-----------------|
+| Cache memory (4K tokens) | 48.0 MB | 11.2 MB (**4.3x**) |
+| Decode speed | 286 tok/s | 175 tok/s |
+| Cache per 100 tokens | 3072 KB | 160 KB |
 
 ## How it works
 
-1. **Random rotation** — Hadamard transform makes coordinate distributions data-oblivious
-2. **Optimal quantization** — precomputed Lloyd-Max codebooks for the known Beta(d/2, d/2) distribution
-3. **Bit-packing** — store quantized indices at 2-4 bits per coordinate
-4. **On-demand decompression** — reconstruct KV vectors at attention time
+```
+Input KV vectors (float16)
+    |
+    v
+1. Normalize ── compute L2 norm, store as float16
+    |
+    v
+2. Rotate ──── randomized Hadamard transform (data-oblivious)
+    |
+    v
+3. Quantize ── Lloyd-Max optimal codebook for Beta(d/2, d/2)
+    |
+    v
+4. Pack ────── 2/3/4-bit indices into uint32 words
+    |
+    v
+Compressed storage (4-10x smaller)
+```
+
+At attention time, the process reverses: unpack, dequantize, inverse rotate, rescale. An optional Metal kernel fuses unpack+dequant for 1.6x decode speedup.
 
 ## Requirements
 
@@ -29,12 +53,66 @@ cd TurboQuant-AppleMLX-Training-Pipeline
 uv sync
 ```
 
+## Usage
+
+### CLI
+
+```bash
+# Generate with compressed KV cache
+mlx-tq generate --model mlx-community/Qwen2.5-0.5B-Instruct-4bit \
+    --prompt "Explain KV cache compression" --kv-bits 3
+
+# Compare baseline vs compressed side-by-side
+mlx-tq compare --model mlx-community/Qwen2.5-0.5B-Instruct-4bit \
+    --prompt "What is the meaning of life?" --kv-bits 3
+
+# Show model architecture and memory estimates
+mlx-tq info --model mlx-community/Qwen2.5-0.5B-Instruct-4bit
+
+# Run benchmarks and generate reports
+mlx-tq bench --model mlx-community/Qwen2.5-0.5B-Instruct-4bit --suite quick
+```
+
+### Python API
+
+```python
+from mlx_lm import load
+from mlx_turboquant.integration.generate_wrapper import (
+    generate_with_compressed_cache,
+    generate_baseline,
+)
+
+model, tokenizer = load("mlx-community/Qwen2.5-0.5B-Instruct-4bit")
+
+# Compressed generation
+result = generate_with_compressed_cache(
+    model, tokenizer, "Hello world", kv_bits=3, max_tokens=100,
+)
+print(result.text)
+print(f"Cache: {result.cache_bytes / 1024:.0f} KB")
+```
+
+See [`examples/`](examples/) for more.
+
+## Project structure
+
+```
+mlx_turboquant/
+  codec/        Phase 1: codebooks, transforms, packbits, stage1_codec
+  cache/        Phase 2: compressed_cache, memory_accounting, cache_layout
+  integration/  Phase 3: mlx_lm_adapter, generate_wrapper
+  bench/        Phase 4: memory, latency, quality, prompts, report
+  kernels/      Phase 5: metal_pack (fused unpack+dequant Metal kernels)
+  cli.py        CLI entry point (generate, compare, info, bench)
+```
+
 ## Development
 
 ```bash
-uv run pytest                    # tests
-uv run ruff check .              # lint
-uv run mypy mlx_turboquant/      # type check
+uv sync --all-extras          # install all deps
+uv run pytest                 # 166 tests
+uv run ruff check .           # lint
+uv run mypy mlx_turboquant/   # type check (strict)
 ```
 
 ## References

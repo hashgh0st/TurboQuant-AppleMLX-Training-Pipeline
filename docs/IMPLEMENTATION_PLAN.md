@@ -916,7 +916,9 @@ def metal_compressed_attention(
 
 ---
 
-## Phase 6 — Polish and Ship
+## Phase 6 — Polish and Ship [COMPLETE]
+
+**Completed:** 2026-03-28
 
 ### Goal
 Final quality pass: documentation, README with real benchmarks, example notebooks, and clean git history.
@@ -937,12 +939,12 @@ Final quality pass: documentation, README with real benchmarks, example notebook
 - All docstrings reviewed and complete
 
 ### Exit Criteria
-- [ ] `pip install .` from clean clone works
-- [ ] README quickstart example runs successfully
-- [ ] All benchmarks reproducible on M4 Mini 16 GB
-- [ ] `ruff check .` clean, `mypy mlx_turboquant/` clean
-- [ ] Full test suite green (`pytest --slow` for integration tests)
-- [ ] v0.1.0 tagged
+- [x] `pip install .` from clean clone works
+- [x] README quickstart example runs successfully
+- [x] All benchmarks reproducible on M4 Mini 16 GB
+- [x] `ruff check .` clean, `mypy mlx_turboquant/` clean
+- [x] Full test suite green (`pytest --slow` for integration tests)
+- [x] v0.1.0 tagged
 
 ---
 
