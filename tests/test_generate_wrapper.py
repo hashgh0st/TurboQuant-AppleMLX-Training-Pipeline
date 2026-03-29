@@ -85,7 +85,7 @@ def test_compressed_uses_logical_bytes_and_tracks_allocated_bytes(
         max_tokens=2,
     )
 
-    assert result.cache_bytes == 1080
+    assert result.cache_bytes == 1120  # float32 corrected norms (4 bytes vs 2)
     assert result.cache_allocated_bytes == 1280
 
 
@@ -110,5 +110,5 @@ def test_mixed_precision_compressed_mode_and_memory_accounting(
     )
 
     assert result.cache_mode == "compressed-k3v4bit-metal"
-    assert result.cache_bytes == 1200
+    assert result.cache_bytes == 1240  # float32 corrected norms
     assert result.cache_allocated_bytes == 1536

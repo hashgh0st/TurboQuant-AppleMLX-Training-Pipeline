@@ -124,9 +124,9 @@ class CompressedKVCache:
             if self._packed_keys is None or new_compressed_end > self._packed_keys.shape[2]:
                 n_alloc = ((self.step + compress_steps - 1) // self.step) * self.step
                 new_pk = mx.zeros((B, n_kv_heads, n_alloc, self._key_pdim), dtype=mx.uint32)
-                new_kn = mx.zeros((B, n_kv_heads, n_alloc), dtype=mx.float16)
+                new_kn = mx.zeros((B, n_kv_heads, n_alloc), dtype=mx.float32)
                 new_pv = mx.zeros((B, n_kv_heads, n_alloc, self._value_pdim), dtype=mx.uint32)
-                new_vn = mx.zeros((B, n_kv_heads, n_alloc), dtype=mx.float16)
+                new_vn = mx.zeros((B, n_kv_heads, n_alloc), dtype=mx.float32)
                 if (
                     self._packed_keys is not None
                     and self._key_norms is not None
@@ -440,9 +440,9 @@ class CompressedKVCache:
         sink_bytes = 2 * B * n_kv_heads * self._sink_filled * head_dim * 2
         compressed_len = self.offset - self._sink_filled
         key_packed_bytes = B * n_kv_heads * compressed_len * self._key_pdim * 4
-        key_norm_bytes = B * n_kv_heads * compressed_len * 2
+        key_norm_bytes = B * n_kv_heads * compressed_len * 4  # float32 corrected norms
         value_packed_bytes = B * n_kv_heads * compressed_len * self._value_pdim * 4
-        value_norm_bytes = B * n_kv_heads * compressed_len * 2
+        value_norm_bytes = B * n_kv_heads * compressed_len * 4  # float32 corrected norms
 
         return sink_bytes + key_packed_bytes + key_norm_bytes + value_packed_bytes + value_norm_bytes
 
@@ -458,7 +458,7 @@ class CompressedKVCache:
             B, n_kv_heads = self._packed_keys.shape[0], self._packed_keys.shape[1]
             alloc_steps = self._packed_keys.shape[2]
             alloc += B * n_kv_heads * alloc_steps * self._key_pdim * 4
-            alloc += B * n_kv_heads * alloc_steps * 2
+            alloc += B * n_kv_heads * alloc_steps * 4  # float32 key norms
             alloc += B * n_kv_heads * alloc_steps * self._value_pdim * 4
-            alloc += B * n_kv_heads * alloc_steps * 2
+            alloc += B * n_kv_heads * alloc_steps * 4  # float32 value norms
         return alloc
