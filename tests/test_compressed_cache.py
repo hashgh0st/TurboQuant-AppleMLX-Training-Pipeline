@@ -104,6 +104,11 @@ class TestProtocolCompliance:
         assert trimmed == 10
         assert cache.offset == 0
 
+    def test_empty_after_trimming_to_zero(self, cache: CompressedKVCache) -> None:
+        cache.update_and_fetch(*_random_kv(10))
+        cache.trim(10)
+        assert cache.empty()
+
     def test_empty_initially(self, cache: CompressedKVCache) -> None:
         assert cache.empty()
 
@@ -138,6 +143,19 @@ class TestState:
         ms = cache.meta_state
         assert isinstance(ms, tuple)
         assert ms[0] == "10"
+
+    def test_setting_state_none_clears_cache(self, cache: CompressedKVCache) -> None:
+        cache.update_and_fetch(*_random_kv(10))
+        cache.state = (None, None)
+        assert cache.size() == 0
+        assert cache.empty()
+        assert cache.nbytes == 0
+        assert cache.state == (None, None)
+
+    def test_setting_partial_state_raises(self, cache: CompressedKVCache) -> None:
+        keys, _values = _random_kv(10)
+        with pytest.raises(ValueError, match="both keys and values, or both None"):
+            cache.state = (keys, None)
 
 
 class TestCompression:

@@ -145,8 +145,15 @@ class CompressedKVCache:
     def state(self, v: tuple[mx.array | None, mx.array | None]) -> None:
         """Load from decompressed state by re-compressing."""
         keys, values = v
-        if keys is None or values is None:
+        if keys is None and values is None:
+            self.offset = 0
+            self._packed_keys = None
+            self._key_norms = None
+            self._packed_values = None
+            self._value_norms = None
             return
+        if keys is None or values is None:
+            raise ValueError("state requires both keys and values, or both None")
         self.offset = 0
         self._packed_keys = None
         self._key_norms = None
@@ -181,7 +188,7 @@ class CompressedKVCache:
         )
 
     def empty(self) -> bool:
-        return self._packed_keys is None
+        return self.offset == 0
 
     def size(self) -> int:
         return self.offset

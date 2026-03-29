@@ -72,6 +72,8 @@ def benchmark_quality(
             match_ratio = matches / min_len if min_len > 0 else 0.0
             if min_len == 0:
                 first_div = 0
+            elif first_div == -1 and len(baseline.tokens) != len(compressed.tokens):
+                first_div = min_len
 
             results.append(
                 QualityResult(

@@ -6,8 +6,11 @@ import json
 import tempfile
 from pathlib import Path
 
+import pytest
+
+import mlx_turboquant.bench.quality as quality_module
 from mlx_turboquant.bench.memory import benchmark_memory
-from mlx_turboquant.bench.quality import QualityResult
+from mlx_turboquant.bench.quality import QualityResult, benchmark_quality
 from mlx_turboquant.bench.report import generate_report
 from mlx_turboquant.cache.memory_accounting import MemoryReport
 from mlx_turboquant.integration.generate_wrapper import GenerationResult
@@ -59,6 +62,79 @@ class TestQualityResult:
         )
         assert r.token_match_ratio == 0.85
         assert r.first_divergence_position == 3
+
+
+class TestBenchmarkQuality:
+    @staticmethod
+    def _result(tokens: list[int]) -> GenerationResult:
+        return GenerationResult(
+            text="",
+            tokens=tokens,
+            tokens_generated=len(tokens),
+            ttft_ms=0.0,
+            decode_tokens_per_sec=0.0,
+            cache_bytes=0,
+            cache_mode="baseline",
+        )
+
+    def test_identical_sequences_report_no_divergence(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        baseline = self._result([1, 2, 3])
+        compressed = self._result([1, 2, 3])
+        monkeypatch.setattr(quality_module, "generate_baseline", lambda *args, **kwargs: baseline)
+        monkeypatch.setattr(
+            quality_module,
+            "generate_with_compressed_cache",
+            lambda *args, **kwargs: compressed,
+        )
+
+        result = benchmark_quality(None, None, {"prompt": "hello"}, kv_bits_list=[3])[0]
+        assert result.first_divergence_position == -1
+
+    def test_prefix_mismatch_reports_divergence_at_shared_prefix_length(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        baseline = self._result([1, 2, 3])
+        compressed = self._result([1, 2])
+        monkeypatch.setattr(quality_module, "generate_baseline", lambda *args, **kwargs: baseline)
+        monkeypatch.setattr(
+            quality_module,
+            "generate_with_compressed_cache",
+            lambda *args, **kwargs: compressed,
+        )
+
+        result = benchmark_quality(None, None, {"prompt": "hello"}, kv_bits_list=[3])[0]
+        assert result.first_divergence_position == 2
+
+    def test_middle_token_mismatch_reports_exact_index(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        baseline = self._result([1, 2, 3])
+        compressed = self._result([1, 9, 3])
+        monkeypatch.setattr(quality_module, "generate_baseline", lambda *args, **kwargs: baseline)
+        monkeypatch.setattr(
+            quality_module,
+            "generate_with_compressed_cache",
+            lambda *args, **kwargs: compressed,
+        )
+
+        result = benchmark_quality(None, None, {"prompt": "hello"}, kv_bits_list=[3])[0]
+        assert result.first_divergence_position == 1
+
+    def test_zero_length_sequences_report_zero_divergence(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        empty = self._result([])
+        monkeypatch.setattr(quality_module, "generate_baseline", lambda *args, **kwargs: empty)
+        monkeypatch.setattr(
+            quality_module,
+            "generate_with_compressed_cache",
+            lambda *args, **kwargs: empty,
+        )
+
+        result = benchmark_quality(None, None, {"prompt": "hello"}, kv_bits_list=[3])[0]
+        assert result.first_divergence_position == 0
 
 
 class TestReport:
