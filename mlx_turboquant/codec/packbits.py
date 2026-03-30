@@ -108,4 +108,4 @@ def unpack_signs(packed: mx.array, head_dim: int) -> mx.array:
     bits = mx.bitwise_and(mx.right_shift(expanded, shifts), mx.array(1, dtype=mx.uint32))
     flat = bits.reshape(*batch_shape, num_words * SIGNS_PER_WORD)
     # Map {0, 1} → {-1, +1}
-    return (2.0 * flat[..., :head_dim].astype(mx.float32) - 1.0)
+    return 2.0 * flat[..., :head_dim].astype(mx.float32) - 1.0

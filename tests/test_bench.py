@@ -330,8 +330,8 @@ class TestPromotion:
             _lr("baseline", 200.0),
             _lr("baseline", 200.0),
             # Compressed: two slow runs + one lucky fast run
-            _lr("compressed-3bit", 40.0),   # 5x slowdown
-            _lr("compressed-3bit", 45.0),   # 4.4x slowdown
+            _lr("compressed-3bit", 40.0),  # 5x slowdown
+            _lr("compressed-3bit", 45.0),  # 4.4x slowdown
             _lr("compressed-3bit", 180.0),  # lucky outlier — 1.1x
         ]
         verdicts = evaluate_profiles(qrs, lrs)

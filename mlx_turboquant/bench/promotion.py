@@ -87,9 +87,7 @@ def evaluate_profiles(
         if avg_match < thresholds.min_token_match:
             failures.append(f"token_match {avg_match:.0%} < {thresholds.min_token_match:.0%}")
         if worst_diverge < thresholds.min_first_diverge:
-            failures.append(
-                f"first_diverge {worst_diverge} < {thresholds.min_first_diverge}"
-            )
+            failures.append(f"first_diverge {worst_diverge} < {thresholds.min_first_diverge}")
         if profile_tok_s > 0 and baseline_tok_s > 0 and slowdown > thresholds.max_decode_slowdown:
             failures.append(
                 f"decode_slowdown {slowdown:.1f}x > {thresholds.max_decode_slowdown:.1f}x"

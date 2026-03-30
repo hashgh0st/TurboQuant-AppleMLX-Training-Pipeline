@@ -372,8 +372,12 @@ def _cmd_bench(args: argparse.Namespace) -> None:
     # Generate report
     output_dir = args.output_dir
     generate_report(
-        mem_results, lat_results, qual_results, output_dir,
-        model_name=args.model, verdicts=verdicts,
+        mem_results,
+        lat_results,
+        qual_results,
+        output_dir,
+        model_name=args.model,
+        verdicts=verdicts,
     )
     print(f"\nReport written to {output_dir}/results.json and {output_dir}/BENCHMARKS.md")
 

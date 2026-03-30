@@ -149,9 +149,7 @@ class TestCalibratedCodebookStorage:
         assert loaded.centroids == precomputed.centroids
 
     def test_fallback_when_no_calibrated(self) -> None:
-        loaded = load_codebook_with_fallback(
-            64, 3, "key", model_name="nonexistent/model"
-        )
+        loaded = load_codebook_with_fallback(64, 3, "key", model_name="nonexistent/model")
         precomputed = load_codebook(64, 3)
         assert loaded.centroids == precomputed.centroids
 
@@ -172,8 +170,11 @@ class TestCodecWithCalibration:
         save_codebook(custom, model_dir / "64_2_key.json")
 
         config = CodecConfig(
-            head_dim=64, bits=2, model_name="test/model",
-            kv_type="key", calibrated_dir=tmp_path,
+            head_dim=64,
+            bits=2,
+            model_name="test/model",
+            kv_type="key",
+            calibrated_dir=tmp_path,
         )
         codec = Stage1Codec(config)
         # Centroids should match our custom codebook, not precomputed

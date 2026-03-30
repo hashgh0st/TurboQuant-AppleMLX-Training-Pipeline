@@ -66,9 +66,7 @@ class CompressedKVCache:
             raise ValueError("key and value codecs must share head_dim")
         # Use mse_bits for packed_dim (bits-1 when QJL is on)
         self._key_pdim = packed_dim(self.key_codec.config.head_dim, self.key_codec.mse_bits)
-        self._value_pdim = packed_dim(
-            self.value_codec.config.head_dim, self.value_codec.mse_bits
-        )
+        self._value_pdim = packed_dim(self.value_codec.config.head_dim, self.value_codec.mse_bits)
         self._key_qjl_pdim = signs_packed_dim(self.key_codec.config.head_dim)
 
     def update_and_fetch(self, keys: mx.array, values: mx.array) -> tuple[mx.array, mx.array]:
@@ -98,12 +96,12 @@ class CompressedKVCache:
                 )
             assert self._sink_keys is not None and self._sink_values is not None
             sf = old_sink_filled
-            self._sink_keys[:, :, sf : sf + sink_take, :] = keys[
-                :, :, :sink_take, :
-            ].astype(mx.float16)
-            self._sink_values[:, :, sf : sf + sink_take, :] = values[
-                :, :, :sink_take, :
-            ].astype(mx.float16)
+            self._sink_keys[:, :, sf : sf + sink_take, :] = keys[:, :, :sink_take, :].astype(
+                mx.float16
+            )
+            self._sink_values[:, :, sf : sf + sink_take, :] = values[:, :, :sink_take, :].astype(
+                mx.float16
+            )
             self._sink_filled = sf + sink_take
 
         if compress_steps > 0:
@@ -155,18 +153,15 @@ class CompressedKVCache:
                     )
                     new_krn = mx.zeros((B, n_kv_heads, n_alloc), dtype=mx.float16)
                     if self._qjl_packed_keys is not None:
+                        assert self._key_residual_norms is not None
                         if compressed_prev % self.step != 0:
-                            self._qjl_packed_keys = self._qjl_packed_keys[
-                                :, :, :compressed_prev, :
-                            ]
-                            self._key_residual_norms = self._key_residual_norms[  # type: ignore[index]
-                                :, :, :compressed_prev
-                            ]
+                            self._qjl_packed_keys = self._qjl_packed_keys[:, :, :compressed_prev, :]
+                            self._key_residual_norms = self._key_residual_norms[:, :, :compressed_prev]
                         self._qjl_packed_keys = mx.concatenate(
                             [self._qjl_packed_keys, new_qjl], axis=2
                         )
                         self._key_residual_norms = mx.concatenate(
-                            [self._key_residual_norms, new_krn], axis=2  # type: ignore[list-item]
+                            [self._key_residual_norms, new_krn], axis=2
                         )
                     else:
                         self._qjl_packed_keys = new_qjl
@@ -182,9 +177,7 @@ class CompressedKVCache:
             self._value_norms[:, :, compressed_prev:new_compressed_end] = vn
 
             if self._use_qjl and ct_k.qjl_packed is not None:
-                qjl_pk = ct_k.qjl_packed.reshape(
-                    B, n_kv_heads, compress_steps, self._key_qjl_pdim
-                )
+                qjl_pk = ct_k.qjl_packed.reshape(B, n_kv_heads, compress_steps, self._key_qjl_pdim)
                 krn = ct_k.residual_norms.reshape(B, n_kv_heads, compress_steps)  # type: ignore[union-attr]
                 assert self._qjl_packed_keys is not None
                 assert self._key_residual_norms is not None
@@ -192,9 +185,7 @@ class CompressedKVCache:
                 self._key_residual_norms[:, :, compressed_prev:new_compressed_end] = krn
 
         self.offset += num_steps
-        return self._decode_incremental(
-            B, n_kv_heads, head_dim, sink_take, compress_steps
-        )
+        return self._decode_incremental(B, n_kv_heads, head_dim, sink_take, compress_steps)
 
     def _decode_incremental(
         self,
@@ -215,9 +206,7 @@ class CompressedKVCache:
         if sink_take > 0:
             sf_start = self._sink_filled - sink_take
             assert self._sink_keys is not None and self._sink_values is not None
-            new_k.append(
-                self._sink_keys[:, :, sf_start : self._sink_filled, :].astype(mx.float32)
-            )
+            new_k.append(self._sink_keys[:, :, sf_start : self._sink_filled, :].astype(mx.float32))
             new_v.append(
                 self._sink_values[:, :, sf_start : self._sink_filled, :].astype(mx.float32)
             )
@@ -266,9 +255,7 @@ class CompressedKVCache:
         assert self._packed_values is not None
         assert self._value_norms is not None
 
-        pk_flat = self._packed_keys[:, :, start:end, :].reshape(
-            B * n_kv_heads, n, self._key_pdim
-        )
+        pk_flat = self._packed_keys[:, :, start:end, :].reshape(B * n_kv_heads, n, self._key_pdim)
         kn_flat = self._key_norms[:, :, start:end].reshape(B * n_kv_heads, n)
         pv_flat = self._packed_values[:, :, start:end, :].reshape(
             B * n_kv_heads, n, self._value_pdim
@@ -285,8 +272,11 @@ class CompressedKVCache:
             krn_flat = self._key_residual_norms[:, :, start:end].reshape(B * n_kv_heads, n)
 
         ct_k = CompressedTensor(
-            packed=pk_flat, norms=kn_flat, config=self.key_codec.config,
-            qjl_packed=qjl_flat, residual_norms=krn_flat,
+            packed=pk_flat,
+            norms=kn_flat,
+            config=self.key_codec.config,
+            qjl_packed=qjl_flat,
+            residual_norms=krn_flat,
         )
         ct_v = CompressedTensor(packed=pv_flat, norms=vn_flat, config=self.value_codec.config)
 
@@ -310,9 +300,7 @@ class CompressedKVCache:
 
         compressed_len = self.offset - self._sink_filled
         if compressed_len > 0:
-            k_dec, v_dec = self._decode_compressed_slice(
-                B, n_kv_heads, head_dim, 0, compressed_len
-            )
+            k_dec, v_dec = self._decode_compressed_slice(B, n_kv_heads, head_dim, 0, compressed_len)
             parts_k.append(k_dec)
             parts_v.append(v_dec)
 
@@ -444,7 +432,9 @@ class CompressedKVCache:
         value_packed_bytes = B * n_kv_heads * compressed_len * self._value_pdim * 4
         value_norm_bytes = B * n_kv_heads * compressed_len * 4  # float32 corrected norms
 
-        return sink_bytes + key_packed_bytes + key_norm_bytes + value_packed_bytes + value_norm_bytes
+        return (
+            sink_bytes + key_packed_bytes + key_norm_bytes + value_packed_bytes + value_norm_bytes
+        )
 
     @property
     def allocated_nbytes(self) -> int:

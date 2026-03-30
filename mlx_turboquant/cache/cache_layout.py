@@ -53,9 +53,7 @@ def create_cache_layers(config: CacheConfig) -> list[CompressedKVCache]:
     )
     key_codec = Stage1Codec(key_codec_config)
     # Separate codecs when bits differ OR when calibrated (different kv_type codebooks)
-    share_codec = (
-        value_bits == config.kv_bits and config.model_name is None and not config.use_qjl
-    )
+    share_codec = value_bits == config.kv_bits and config.model_name is None and not config.use_qjl
     value_codec = key_codec if share_codec else Stage1Codec(value_codec_config)
     use_metal = config.backend == "metal"
     return [

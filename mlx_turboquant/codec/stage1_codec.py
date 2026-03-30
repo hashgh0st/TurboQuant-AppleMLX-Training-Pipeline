@@ -165,9 +165,12 @@ class Stage1Codec:
             signs = unpack_signs(ct.qjl_packed, ct.config.head_dim)
             # S^T @ signs: (..., d) @ (d, d)^T = (..., d)
             correction = mx.matmul(signs, self._s_matrix)
-            x_normed = x_normed + self._qjl_decode_scale * ct.residual_norms.astype(
-                mx.float32
-            )[..., None] * correction
+            x_normed = (
+                x_normed
+                + self._qjl_decode_scale
+                * ct.residual_norms.astype(mx.float32)[..., None]
+                * correction
+            )
 
         # Norms are stored as float32 with correction factor baked in
         norms_f32 = ct.norms if ct.norms.dtype == mx.float32 else ct.norms.astype(mx.float32)

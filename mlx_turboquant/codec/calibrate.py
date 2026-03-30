@@ -95,9 +95,7 @@ class KVCollectorCache:
         self.key_coords: list[np.ndarray] = []
         self.value_coords: list[np.ndarray] = []
 
-    def update_and_fetch(
-        self, keys: mx.array, values: mx.array
-    ) -> tuple[mx.array, mx.array]:
+    def update_and_fetch(self, keys: mx.array, values: mx.array) -> tuple[mx.array, mx.array]:
         # Rotate and flatten immediately — don't hold raw MLX tensors
         self.key_coords.append(_rotate_and_flatten(keys, self._transform))
         self.value_coords.append(_rotate_and_flatten(values, self._transform))
